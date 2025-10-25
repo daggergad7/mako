@@ -926,6 +926,13 @@ if(BUILD_TESTS)
     target_link_libraries(test_rpc_extended ${TEST_LINK_LIBS} ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES} pthread)
     add_test(NAME test_rpc_extended COMMAND test_rpc_extended)
     
+    # Masstree Tests
+    add_executable(test_masstree test/test_masstree.cc)
+    target_include_directories(test_masstree PRIVATE ${TEST_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
+    target_compile_options(test_masstree PRIVATE ${TEST_COMPILE_OPTIONS})
+    target_link_libraries(test_masstree ${TEST_LINK_LIBS} mako ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES} pthread)
+    add_test(NAME test_masstree COMMAND test_masstree)
+    
     # Extended Reactor Tests
     add_executable(test_reactor_extended test/test_reactor_extended.cc)
     target_include_directories(test_reactor_extended PRIVATE ${TEST_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
@@ -965,7 +972,7 @@ if(BUILD_TESTS)
     # Add a convenience target to run all tests
     add_custom_target(run_tests
         COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-        DEPENDS test_marshal test_rpc test_future test_reactor test_rpc_extended test_reactor_extended simpleTransaction simplePaxos shard1ReplicationSimple  # test_alock removed
+        DEPENDS test_marshal test_rpc test_future test_reactor test_masstree test_rpc_extended test_reactor_extended simpleTransaction simplePaxos shard1ReplicationSimple  # test_alock removed
         COMMENT "Running all RRR tests"
     )
     
@@ -993,9 +1000,9 @@ if(BUILD_TESTS)
     # message(STATUS "  - test_alock: Atomic lock tests")  # Commented out due to crashes
     message(STATUS "  - test_future: Future/async operation tests")
     message(STATUS "  - test_reactor: Reactor/event system tests")
+    message(STATUS "  - test_masstree: Masstree storage engine regression tests")
     message(STATUS "  - test_reactor_extended: Extended reactor tests (events, coroutines, load)")
     message(STATUS "")
     message(STATUS "Run tests with: make run_tests")
     message(STATUS "Or individually: make test && ctest")
 endif()
-
