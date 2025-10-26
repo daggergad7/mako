@@ -19,6 +19,7 @@
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 #include <arpa/inet.h>
+#include "value_handle.hh"
 #if HAVE_TYPE_TRAITS
 #include <type_traits>
 #endif
@@ -594,6 +595,15 @@ template <typename T>
 struct value_prefetcher<T *> {
     void operator()(T *p) {
         prefetch((const void *) p);
+    }
+};
+
+template <>
+struct value_prefetcher<MasstreeValueHandle> {
+    void operator()(const MasstreeValueHandle& handle) {
+        if (handle.bits) {
+            prefetch(reinterpret_cast<const void*>(handle.bits));
+        }
     }
 };
 

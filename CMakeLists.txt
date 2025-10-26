@@ -663,6 +663,7 @@ target_include_directories(mako PUBLIC
     "${W}/masstree"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mako"
     "${CMAKE_CURRENT_SOURCE_DIR}/third-party/lz4"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third-party/rusty-cpp/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${HOME}"
 )
@@ -861,6 +862,7 @@ if(BUILD_TESTS)
         src/rrr
         src/memdb
         test
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/rusty-cpp/include
     )
     
     # Common test compile options
