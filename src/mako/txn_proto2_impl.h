@@ -809,10 +809,10 @@ public:
       space_needed += vs_uint32_t.nbytes(&k_nbytes);
       space_needed += k_nbytes;
 
-      const uint32_t v_nbytes = rec.get_value() ?
+      const uint32_t v_nbytes = rec.has_value() ?
           rec.get_writer()(
               dbtuple::TUPLE_WRITER_COMPUTE_DELTA_NEEDED,
-              rec.get_value(), nullptr, 0) : 0;
+              rec.value_ptr(), nullptr, 0) : 0;
       space_needed += vs_uint32_t.nbytes(&v_nbytes);
       space_needed += v_nbytes;
 
@@ -928,7 +928,7 @@ private:
       const uint32_t v_nbytes = value_sizes[idx];
       p = vs_uint32_t.write(p, v_nbytes);
       if (v_nbytes) {
-        rec.get_writer()(dbtuple::TUPLE_WRITER_DO_DELTA_WRITE, rec.get_value(), p, v_nbytes);
+        rec.get_writer()(dbtuple::TUPLE_WRITER_DO_DELTA_WRITE, rec.value_ptr(), p, v_nbytes);
         p += v_nbytes;
       }
     }

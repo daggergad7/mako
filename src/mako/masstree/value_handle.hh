@@ -9,35 +9,47 @@
 struct MasstreeValueHandle {
     std::uintptr_t bits;
 
-    // No user-defined constructors/destructors to keep the type trivially copyable.
+    template <typename T>
+    static constexpr MasstreeValueHandle from_ptr(T* ptr) noexcept {
+        return MasstreeValueHandle{reinterpret_cast<std::uintptr_t>(ptr)};
+    }
 
-    inline bool is_null() const {
+    template <typename T>
+    static constexpr MasstreeValueHandle from_ptr(const T* ptr) noexcept {
+        return MasstreeValueHandle{reinterpret_cast<std::uintptr_t>(ptr)};
+    }
+
+    static constexpr MasstreeValueHandle null() noexcept {
+        return MasstreeValueHandle{std::uintptr_t(0)};
+    }
+
+    [[nodiscard]] constexpr bool is_null() const noexcept {
         return bits == 0U;
     }
 
-    inline explicit operator bool() const {
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
         return !is_null();
     }
 
-    inline void reset(std::uintptr_t new_bits = 0U) {
+    constexpr void reset(std::uintptr_t new_bits = 0U) noexcept {
         bits = new_bits;
     }
 
-    inline void reset_ptr(uint8_t* p) {
+    constexpr void reset_ptr(const void* p) noexcept {
         bits = reinterpret_cast<std::uintptr_t>(p);
     }
 
-    inline uint8_t* get() const {
+    [[nodiscard]] inline uint8_t* get() const noexcept {
         return reinterpret_cast<uint8_t*>(bits);
     }
 
     template <typename T>
-    inline T* as() const {
+    [[nodiscard]] inline T* as() const noexcept {
         return reinterpret_cast<T*>(bits);
     }
 
     template <typename T>
-    inline const T* as_const() const {
+    [[nodiscard]] inline const T* as_const() const noexcept {
         return reinterpret_cast<const T*>(bits);
     }
 };
@@ -45,36 +57,43 @@ struct MasstreeValueHandle {
 // Helper constructors -------------------------------------------------------
 
 inline MasstreeValueHandle make_value_handle(std::uintptr_t bits) {
-    MasstreeValueHandle handle{bits};
-    return handle;
+    return MasstreeValueHandle{bits};
 }
 
 inline MasstreeValueHandle make_value_handle(uint8_t* ptr) {
-    return make_value_handle(reinterpret_cast<std::uintptr_t>(ptr));
+    return MasstreeValueHandle::from_ptr(ptr);
 }
 
 inline MasstreeValueHandle make_value_handle(std::nullptr_t) {
-    return make_value_handle(static_cast<std::uintptr_t>(0));
+    return MasstreeValueHandle::null();
 }
 
 template <typename T>
 inline MasstreeValueHandle make_value_handle(T* ptr) {
-    return make_value_handle(reinterpret_cast<std::uintptr_t>(ptr));
+    return MasstreeValueHandle::from_ptr(ptr);
+}
+
+template <typename T>
+inline MasstreeValueHandle make_value_handle(const T* ptr) {
+    return MasstreeValueHandle::from_ptr(ptr);
 }
 
 // Comparison helpers --------------------------------------------------------
 
 #define MASSTREE_HANDLE_EQ_OP(OP)                                    \
-    inline bool operator OP(const MasstreeValueHandle& lhs,          \
-                            const MasstreeValueHandle& rhs) {        \
+    [[nodiscard]] constexpr inline bool operator OP(                 \
+            const MasstreeValueHandle& lhs,                          \
+            const MasstreeValueHandle& rhs) noexcept {               \
         return lhs.bits OP rhs.bits;                                 \
     }                                                                \
-    inline bool operator OP(const MasstreeValueHandle& lhs,          \
-                            std::nullptr_t) {                        \
+    [[nodiscard]] constexpr inline bool operator OP(                 \
+            const MasstreeValueHandle& lhs,                          \
+            std::nullptr_t) noexcept {                               \
         return lhs.bits OP std::uintptr_t(0);                        \
     }                                                                \
-    inline bool operator OP(std::nullptr_t,                          \
-                            const MasstreeValueHandle& rhs) {        \
+    [[nodiscard]] constexpr inline bool operator OP(                 \
+            std::nullptr_t,                                          \
+            const MasstreeValueHandle& rhs) noexcept {               \
         return std::uintptr_t(0) OP rhs.bits;                        \
     }
 
@@ -82,4 +101,3 @@ MASSTREE_HANDLE_EQ_OP(==)
 MASSTREE_HANDLE_EQ_OP(!=)
 
 #undef MASSTREE_HANDLE_EQ_OP
-

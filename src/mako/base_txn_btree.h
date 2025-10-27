@@ -364,7 +364,9 @@ retry:
   INVARIANT(px);
   if (!insert) {
     // add to write set normally, as non-insert
-    t.write_set.emplace_back(px, k, v, writer, &this->underlying_btree, false);
+    const MasstreeValueHandle handle =
+        v ? MasstreeValueHandle::from_ptr(v) : MasstreeValueHandle::null();
+    t.write_set.emplace_back(px, k, handle, writer, &this->underlying_btree, false);
   } else {
     // should already exist in write set as insert
     // (because of try_insert_new_tuple())
