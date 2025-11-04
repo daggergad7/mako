@@ -327,13 +327,14 @@ TEST_F(MasstreeBTreeTest, StringKeysMaintainLexicographicOrder) {
 
 // Guard against helper parameters being mutated when lookups fail.
 TEST_F(MasstreeBTreeTest, SearchMissingKeyDoesNotModifyOutputs) {
-    auto raw = make_value_handle(static_cast<std::uintptr_t>(0xdeadbeef));
+    auto sentinel = storeValue(0xdeadbeefULL);
+    auto raw = sentinel;
     Tree::versioned_node_t info(
         reinterpret_cast<const Tree::node_opaque_t*>(0x1),
         123);
 
     EXPECT_FALSE(tree_.search(u64_varkey(999), raw, &info));
-    EXPECT_EQ(make_value_handle(static_cast<std::uintptr_t>(0xdeadbeef)), raw);
+    EXPECT_EQ(sentinel, raw);
     EXPECT_EQ(0U, info.second);
 }
 

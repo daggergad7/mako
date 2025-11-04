@@ -245,11 +245,6 @@ protected:
     {
       return value;
     }
-    inline const void *
-    value_ptr() const
-    {
-      return reinterpret_cast<const void *>(value.bits);
-    }
     template <typename T>
     inline T *
     value_as() const
@@ -391,7 +386,7 @@ operator<<(
 {
   o << "[tuple=" << r.get_tuple()
     << ", key=" << util::hexify(r.get_key())
-    << ", value=" << util::hexify(r.value_ptr())
+    << ", value=" << util::hexify(r.get_value_handle().void_ptr())
     << ", insert=" << r.is_insert()
     << ", do_write=" << r.do_write()
     << ", btree=" << r.get_btree()

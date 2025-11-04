@@ -29,10 +29,12 @@ using namespace util;
 template <typename T>
 static inline testing_concurrent_btree::value_type make_tree_value(T value) {
   if constexpr (std::is_pointer_v<T>) {
-    using Pointer = std::remove_const_t<std::remove_pointer_t<T>>;
-    return make_value_handle(reinterpret_cast<uint8_t*>(const_cast<Pointer*>(value)));
+    return MasstreeValueHandle::from_ptr(value);
   } else if constexpr (std::is_integral_v<T>) {
-    return make_value_handle(reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(value)));
+    using Boxed = std::remove_const_t<T>;
+    thread_local std::vector<std::unique_ptr<Boxed>> storage;
+    storage.push_back(std::make_unique<Boxed>(value));
+    return MasstreeValueHandle::from_ptr(storage.back().get());
   } else {
     static_assert(std::is_pointer_v<T> || std::is_integral_v<T>, "Unsupported Masstree test value type");
     return testing_concurrent_btree::value_type{};

@@ -43,6 +43,14 @@ struct MasstreeValueHandle {
         return reinterpret_cast<uint8_t*>(bits);
     }
 
+    [[nodiscard]] inline void* void_ptr() noexcept {
+        return reinterpret_cast<void*>(bits);
+    }
+
+    [[nodiscard]] inline const void* void_ptr() const noexcept {
+        return reinterpret_cast<const void*>(bits);
+    }
+
     template <typename T>
     [[nodiscard]] inline T* as() const noexcept {
         return reinterpret_cast<T*>(bits);
@@ -55,14 +63,6 @@ struct MasstreeValueHandle {
 };
 
 // Helper constructors -------------------------------------------------------
-
-inline MasstreeValueHandle make_value_handle(std::uintptr_t bits) {
-    return MasstreeValueHandle{bits};
-}
-
-inline MasstreeValueHandle make_value_handle(uint8_t* ptr) {
-    return MasstreeValueHandle::from_ptr(ptr);
-}
 
 inline MasstreeValueHandle make_value_handle(std::nullptr_t) {
     return MasstreeValueHandle::null();

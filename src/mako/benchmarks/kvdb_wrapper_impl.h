@@ -14,6 +14,7 @@
 #include "../prefetch.h"
 #include "../scopedperf.hh"
 #include "../counter.h"
+#include "../masstree/payload.hh"
 
 namespace private_ {
   static event_avg_counter evt_avg_kvdb_stable_version_spins("avg_kvdb_stable_version_spins");
@@ -274,7 +275,7 @@ struct basic_kvdb_record : public record_version<UseConcurrencyControl> {
       std::min(
           util::round_up<size_t, allocator::LgAllocAlignment>(sizeof(basic_kvdb_record) + sz),
           max_alloc_sz);
-    char * const p = reinterpret_cast<char *>(rcu::s_instance.alloc(alloc_sz));
+    char * const p = reinterpret_cast<char *>(masstree::rcu_allocate(alloc_sz));
     INVARIANT(p);
     return new (p) basic_kvdb_record(alloc_sz - sizeof(basic_kvdb_record), s);
   }
@@ -287,7 +288,7 @@ private:
       reinterpret_cast<basic_kvdb_record *>(r);
     const size_t alloc_sz = px->alloc_size + sizeof(*px);
     px->~basic_kvdb_record();
-    rcu::s_instance.dealloc(px, alloc_sz);
+    masstree::rcu_deallocate(px, alloc_sz);
   }
 
 public:
@@ -296,7 +297,7 @@ public:
   {
     if (unlikely(!r))
       return;
-    rcu::s_instance.free_with_fn(r, deleter);
+    masstree::rcu_free_with(r, deleter);
   }
 
   static void
@@ -338,27 +339,41 @@ kvdb_ordered_index<UseConcurrencyControl>::put(
 {
   typedef basic_kvdb_record<UseConcurrencyControl> kvdb_record;
   ANON_REGION("kvdb_ordered_index::put:", &private_::kvdb_put_probe0_cg);
-  typename my_btree::value_type v{}, v_old{};
-  if (btr.search(varkey(key), v)) {
+  typename my_btree::value_type found{};
+  if (btr.search(varkey(key), found)) {
     // easy
-    kvdb_record * const r = v.as<kvdb_record>();
+    kvdb_record * const r = found.as<kvdb_record>();
     r->prefetch();
     lock_guard<kvdb_record> guard(*r);
     if (r->do_write(value))
       return 0;
     // replace
-    kvdb_record * const rnew = kvdb_record::alloc(value);
-    btr.insert(varkey(key), make_value_handle(rnew), &v_old, 0);
-    INVARIANT(make_value_handle(r) == v_old);
+    MasstreePayload<kvdb_record> new_record(
+        kvdb_record::alloc(value),
+        kvdb_record::release);
+    const auto mutation =
+        btr.insert_with_result(varkey(key), new_record.handle());
+    INVARIANT(!mutation.inserted);
+    INVARIANT(mutation.previous == found);
     // rcu-free the old record
+    masstree::debug_assert_tracked(r);
     kvdb_record::release(r);
+    new_record.release_raw();
     return 0;
   }
-  kvdb_record * const rnew = kvdb_record::alloc(value);
-  if (!btr.insert(varkey(key), make_value_handle(rnew), &v_old, 0)) {
-    kvdb_record * const r = v_old.as<kvdb_record>();
-    kvdb_record::release(r);
+  MasstreePayload<kvdb_record> new_record(
+      kvdb_record::alloc(value),
+      kvdb_record::release);
+  const auto mutation =
+      btr.insert_if_absent_with_result(varkey(key), new_record.handle());
+  if (!mutation.inserted) {
+    if (auto *const existing = mutation.previous.as<kvdb_record>()) {
+      masstree::debug_assert_tracked(existing);
+      kvdb_record::release(existing);
+    }
+    return 0;
   }
+  new_record.release_raw();
   return 0;
 }
 
@@ -370,12 +385,19 @@ kvdb_ordered_index<UseConcurrencyControl>::insert(void *txn,
 {
   typedef basic_kvdb_record<UseConcurrencyControl> kvdb_record;
   ANON_REGION("kvdb_ordered_index::insert:", &private_::kvdb_insert_probe0_cg);
-  kvdb_record * const rnew = kvdb_record::alloc(value);
-  typename my_btree::value_type v_old{};
-  if (!btr.insert(varkey(key), make_value_handle(rnew), &v_old, 0)) {
-    kvdb_record * const r = v_old.as<kvdb_record>();
-    kvdb_record::release(r);
+  MasstreePayload<kvdb_record> new_record(
+      kvdb_record::alloc(value),
+      kvdb_record::release);
+  const auto mutation =
+      btr.insert_if_absent_with_result(varkey(key), new_record.handle());
+  if (!mutation.inserted) {
+    if (auto *const existing = mutation.previous.as<kvdb_record>()) {
+      masstree::debug_assert_tracked(existing);
+      kvdb_record::release(existing);
+    }
+    return 0;
   }
+  new_record.release_raw();
   return 0;
 }
 
@@ -440,10 +462,12 @@ kvdb_ordered_index<UseConcurrencyControl>::remove(void *txn, lcdf::Str key)
 {
   typedef basic_kvdb_record<UseConcurrencyControl> kvdb_record;
   ANON_REGION("kvdb_ordered_index::remove:", &private_::kvdb_remove_probe0_cg);
-  typename my_btree::value_type v{};
-  if (btr.remove(varkey(key), &v)) {
-    kvdb_record * const r = v.as<kvdb_record>();
-    kvdb_record::release(r);
+  const auto removal = btr.remove_with_result(varkey(key));
+  if (removal.removed) {
+    if (auto *const r = removal.value.as<kvdb_record>()) {
+      masstree::debug_assert_tracked(r);
+      kvdb_record::release(r);
+    }
   }
 }
 

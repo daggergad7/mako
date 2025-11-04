@@ -25,6 +25,7 @@
 #include "rcu.h"
 #include "util.h"
 #include "ownership_checker.h"
+#include "masstree/rcu_utils.hh"
 
 // RustyCpp migration note:
 // The Masstree wrapper still leans heavily on raw pointers and RCU era memory
@@ -147,35 +148,35 @@ class simple_threadinfo {
 
     // memory allocation
     void* allocate(size_t sz, memtag) {
-        return rcu::s_instance.alloc(sz);
+        return masstree::rcu_allocate(sz);
     }
     void deallocate(void* p, size_t sz, memtag) {
 	// in C++ allocators, 'p' must be nonnull
-        rcu::s_instance.dealloc(p, sz);
+        masstree::rcu_deallocate(p, sz);
     }
     void deallocate_rcu(void *p, size_t sz, memtag) {
 	assert(p);
-        rcu::s_instance.dealloc_rcu(p, sz);
+        masstree::rcu_deallocate_rcu(p, sz);
     }
 
     void* pool_allocate(size_t sz, memtag) {
 	int nl = (sz + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE;
-        return rcu::s_instance.alloc(nl * CACHE_LINE_SIZE);
+        return masstree::rcu_allocate(nl * CACHE_LINE_SIZE);
     }
     void pool_deallocate(void* p, size_t sz, memtag) {
 	int nl = (sz + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE;
-        rcu::s_instance.dealloc(p, nl * CACHE_LINE_SIZE);
+        masstree::rcu_deallocate(p, nl * CACHE_LINE_SIZE);
     }
     void pool_deallocate_rcu(void* p, size_t sz, memtag) {
 	assert(p);
 	int nl = (sz + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE;
-        rcu::s_instance.dealloc_rcu(p, nl * CACHE_LINE_SIZE);
+        masstree::rcu_deallocate_rcu(p, nl * CACHE_LINE_SIZE);
     }
 
     // RCU
     void rcu_register(mrcu_callback *cb) {
       scoped_rcu_base<false> guard;
-      rcu::s_instance.free_with_fn(cb, mrcu_callback_function);
+      masstree::rcu_free_with(cb, mrcu_callback_function);
     }
 
   private:
@@ -227,6 +228,22 @@ class mbtree {
     uint64_t old_version;
     uint64_t new_version;
   };
+
+  struct mutation_result_t {
+    bool inserted;
+    value_type previous;
+  };
+
+  struct removal_result_t {
+    bool removed;
+    value_type value;
+  };
+
+  mutation_result_t insert_with_result(const key_type &k, value_type v,
+                                       insert_info_t *insert_info = nullptr);
+  mutation_result_t insert_if_absent_with_result(const key_type &k, value_type v,
+                                                 insert_info_t *insert_info = nullptr);
+  removal_result_t remove_with_result(const key_type &k);
 
   void invariant_checker() {} // stub for now
 
@@ -680,6 +697,44 @@ inline bool mbtree<P>::insert_if_absent(const key_type &k, value_type v,
   return !found;
 }
 
+template <typename P>
+typename mbtree<P>::mutation_result_t
+mbtree<P>::insert_with_result(const key_type &k, value_type v,
+                              insert_info_t *insert_info)
+{
+  value_type old{};
+  const bool inserted = insert(k, v, &old, insert_info);
+  return mutation_result_t{inserted, old};
+}
+
+template <typename P>
+typename mbtree<P>::mutation_result_t
+mbtree<P>::insert_if_absent_with_result(const key_type &k, value_type v,
+                                        insert_info_t *insert_info)
+{
+  rcu_region guard;
+  threadinfo ti;
+  Masstree::tcursor<P> lp(table_, k.data(), k.length());
+  mutation_result_t result{};
+  bool found = lp.find_insert(ti);
+  if (!found) {
+    ti.observe_phantoms(lp.node());
+    lp.value() = v;
+    if (insert_info) {
+      insert_info->node = lp.node();
+      insert_info->old_version = lp.previous_full_version_value();
+      insert_info->new_version = lp.next_full_version_value(1);
+    }
+    result.inserted = true;
+    result.previous = value_type{};
+  } else {
+    result.inserted = false;
+    result.previous = lp.value();
+  }
+  lp.finish(!found, ti);
+  return result;
+}
+
 /**
  * return true if a value was removed, false otherwise.
  *
@@ -697,6 +752,15 @@ inline bool mbtree<P>::remove(const key_type &k, value_type *old_v)
     *old_v = lp.value();
   lp.finish(found ? -1 : 0, ti);
   return found;
+}
+
+template <typename P>
+typename mbtree<P>::removal_result_t
+mbtree<P>::remove_with_result(const key_type &k)
+{
+  value_type old{};
+  const bool removed = remove(k, &old);
+  return removal_result_t{removed, old};
 }
 
 template <typename P>

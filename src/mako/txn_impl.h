@@ -408,7 +408,7 @@ transaction<Protocol, Traits>::commit(bool doThrow)
           const dbtuple::write_record_ret ret =
             tuple->write_record_at(
                 cast(), commit_tid.second,
-                it->value_ptr(), it->get_writer());
+                it->get_value_handle().void_ptr(), it->get_writer());
           bool unlock_head = false;
           if (unlikely(ret.head_ != tuple)) {
             // tuple was replaced by ret.head_
@@ -418,12 +418,12 @@ transaction<Protocol, Traits>::commit(bool doThrow)
             unlock_head = true;
             // need to unlink tuple from underlying btree, replacing
             // with ret.rest_ (atomically)
-            typename concurrent_btree::value_type old_v{};
-            if (it->get_btree()->insert(
-                  varkey(it->get_key()), make_value_handle(ret.head_), &old_v, NULL))
-              // should already exist in tree
-              INVARIANT(false);
-            INVARIANT(old_v.as<dbtuple>() == tuple);
+            const auto mutation =
+                it->get_btree()->insert_with_result(
+                    varkey(it->get_key()), make_value_handle(ret.head_));
+            // should already exist in tree
+            INVARIANT(!mutation.inserted);
+            INVARIANT(mutation.previous.as<dbtuple>() == tuple);
             // we don't RCU free this, because it is now part of the chain
             // (the cleaners will take care of this)
             ++evt_dbtuple_latest_replacement;
@@ -526,8 +526,9 @@ transaction<Protocol, Traits>::try_insert_new_tuple(
   // XXX: underlying btree api should return the existing value if insert
   // fails- this would allow us to avoid having to do another search
   typename concurrent_btree::insert_info_t insert_info;
-  if (unlikely(!btr.insert_if_absent(
-          varkey(*key), make_value_handle(tuple), &insert_info))) {
+  const auto mutation = btr.insert_if_absent_with_result(
+      varkey(*key), MasstreeValueHandle::from_ptr(tuple), &insert_info);
+  if (unlikely(!mutation.inserted)) {
     VERBOSE(std::cerr << "insert_if_absent failed for key: " << util::hexify(key) << std::endl);
     tuple->clear_latest();
     tuple->unlock();
