@@ -321,7 +321,7 @@ void Client::end_request() {
     i32 request_size = out_.get_and_reset_write_cnt();
     //Log_info("client request size is %d", request_size);
     out_.write_bookmark(bmark_.get(), &request_size);
-    bmark_.reset();
+    bmark_ = rusty::Box<Marshal::bookmark>(nullptr);
   }
 
   // always enable write events since the code above gauranteed there

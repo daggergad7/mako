@@ -132,7 +132,7 @@ void ServerConnection::end_reply() {
     if (bmark_.get() != nullptr) {
         i32 reply_size = out_.get_and_reset_write_cnt();
         out_.write_bookmark(bmark_.get(), &reply_size);
-        bmark_.reset();
+        bmark_ = rusty::Box<Marshal::bookmark>(nullptr);
     }
 
     // only update poll mode if connection is still active
