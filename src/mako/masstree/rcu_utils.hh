@@ -69,6 +69,7 @@ inline void assert_tracked(const void* ptr) {
 namespace masstree {
 
 // @unsafe
+// SAFETY: Raw allocation bypasses borrow checking; callers must obey Masstree/RCU epoch rules.
 inline void* rcu_allocate(size_t bytes) {
     void* ptr = rcu::s_instance.alloc(bytes);
     detail::track_alloc(ptr);
@@ -76,6 +77,7 @@ inline void* rcu_allocate(size_t bytes) {
 }
 
 // @unsafe
+// SAFETY: Static allocations follow the same epoch requirements as rcu_allocate.
 inline void* rcu_allocate_static(size_t bytes) {
     void* ptr = rcu::s_instance.alloc_static(bytes);
     detail::track_alloc(ptr);
@@ -83,18 +85,21 @@ inline void* rcu_allocate_static(size_t bytes) {
 }
 
 // @unsafe
+// SAFETY: Callers must ensure the pointer is no longer reachable before reclamation.
 inline void rcu_deallocate(void* ptr, size_t bytes) {
     detail::track_release(ptr);
     rcu::s_instance.dealloc(ptr, bytes);
 }
 
 // @unsafe
+// SAFETY: Defers reclamation until a grace period elapses; the caller guarantees quiescent state.
 inline void rcu_deallocate_rcu(void* ptr, size_t bytes) {
     detail::track_release(ptr);
     rcu::s_instance.dealloc_rcu(ptr, bytes);
 }
 
 // @unsafe
+// SAFETY: Uses caller-provided deleter; the deleter must be RCU-safe. Covered by Masstree GC tests.
 inline void rcu_free_with(void* ptr, rcu::deleter_t fn) {
     detail::track_release(ptr);
     rcu::s_instance.free_with_fn(ptr, fn);

@@ -546,9 +546,10 @@ transaction<Protocol, Traits>::try_insert_new_tuple(
   write_set.emplace_back(tuple, key, handle, writer, &btr, true);
 
   // update node #s
-  INVARIANT(insert_info.node);
+  const auto* insert_node = insert_info.node();
+  INVARIANT(insert_node);
   if (!absent_set.empty()) {
-    auto it = absent_set.find(insert_info.node);
+    auto it = absent_set.find(insert_node);
     if (it != absent_set.end()) {
       if (unlikely(it->second.version != insert_info.old_version)) {
         abort_trap((reason = ABORT_REASON_WRITE_NODE_INTERFERENCE));

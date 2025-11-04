@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <optional>
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include "mako/masstree_btree.h"
+#include "mako/masstree/payload.hh"
 #include "mako/varkey.h"
 
 namespace {
@@ -19,6 +21,34 @@ namespace {
 using Tree = concurrent_btree;
 using ValueType = typename Tree::value_type;
 using StringType = typename Tree::string_type;
+
+struct RcuTrackedValue {
+    explicit RcuTrackedValue(uint64_t v) : value(v) {
+        alive.fetch_add(1, std::memory_order_relaxed);
+    }
+    ~RcuTrackedValue() {
+        alive.fetch_sub(1, std::memory_order_relaxed);
+    }
+    uint64_t value;
+    static std::atomic<int> alive;
+};
+
+std::atomic<int> RcuTrackedValue::alive{0};
+
+static void tracked_value_deleter(RcuTrackedValue* ptr) {
+    if (!ptr) {
+        return;
+    }
+    ptr->~RcuTrackedValue();
+    masstree::rcu_deallocate(ptr, sizeof(RcuTrackedValue));
+}
+
+static MasstreePayload<RcuTrackedValue>
+makeTrackedPayload(uint64_t value) {
+    void* storage = masstree::rcu_allocate(sizeof(RcuTrackedValue));
+    auto* obj = new (storage) RcuTrackedValue(value);
+    return make_masstree_payload(obj, tracked_value_deleter);
+}
 
 // Decode helpers keep assertions readable by working with integers directly.
 uint64_t DecodeValue(ValueType handle) {
@@ -374,14 +404,76 @@ TEST_F(MasstreeBTreeTest, RemoveWithNullOldValuePointerSucceeds) {
 
 TEST_F(MasstreeBTreeTest, InsertIfAbsentLeavesExistingPointerIntact) {
     auto first = storeValue(111);
-    EXPECT_TRUE(tree_.insert(u64_varkey(12), first));
+   EXPECT_TRUE(tree_.insert(u64_varkey(12), first));
 
-    auto second = storeValue(222);
+   auto second = storeValue(222);
     EXPECT_FALSE(tree_.insert_if_absent(u64_varkey(12), second));
 
     ValueType raw{};
-    EXPECT_TRUE(tree_.search(u64_varkey(12), raw));
-    EXPECT_EQ(first, raw);
+   EXPECT_TRUE(tree_.search(u64_varkey(12), raw));
+   EXPECT_EQ(first, raw);
+}
+
+TEST_F(MasstreeBTreeTest, InsertWithResultReportsPreviousHandle) {
+    auto first = storeValue(777);
+    auto second = storeValue(888);
+
+    auto initial = tree_.insert_with_result(u64_varkey(42), first);
+    EXPECT_TRUE(initial.inserted);
+    EXPECT_EQ(make_value_handle(nullptr), initial.previous);
+
+    auto update = tree_.insert_with_result(u64_varkey(42), second);
+    EXPECT_FALSE(update.inserted);
+    EXPECT_EQ(first, update.previous);
+}
+
+TEST_F(MasstreeBTreeTest, InsertIfAbsentWithResultAvoidsOverwrite) {
+    auto stored = storeValue(999);
+    auto skipped = storeValue(1001);
+
+    auto first = tree_.insert_if_absent_with_result(u64_varkey(55), stored);
+    EXPECT_TRUE(first.inserted);
+    EXPECT_EQ(make_value_handle(nullptr), first.previous);
+
+    auto second = tree_.insert_if_absent_with_result(u64_varkey(55), skipped);
+    EXPECT_FALSE(second.inserted);
+    EXPECT_EQ(stored, second.previous);
+}
+
+TEST_F(MasstreeBTreeTest, RemoveWithResultReturnsStoredHandle) {
+    auto payload = storeValue(1234);
+    EXPECT_TRUE(tree_.insert(u64_varkey(99), payload));
+
+    auto removal = tree_.remove_with_result(u64_varkey(99));
+    EXPECT_TRUE(removal.removed);
+    EXPECT_EQ(payload, removal.value);
+
+    auto second = tree_.remove_with_result(u64_varkey(99));
+    EXPECT_FALSE(second.removed);
+    EXPECT_EQ(make_value_handle(nullptr), second.value);
+}
+
+TEST_F(MasstreeBTreeTest, PayloadReleasedWhenInsertIfAbsentFails) {
+    auto first_payload = makeTrackedPayload(1111);
+    EXPECT_EQ(1, RcuTrackedValue::alive.load());
+    EXPECT_TRUE(tree_.insert(u64_varkey(200), first_payload.handle()));
+    first_payload.release_raw();
+    EXPECT_EQ(1, RcuTrackedValue::alive.load());
+
+    {
+        auto duplicate = makeTrackedPayload(2222);
+        EXPECT_EQ(2, RcuTrackedValue::alive.load());
+        auto result = tree_.insert_if_absent_with_result(u64_varkey(200), duplicate.handle());
+        EXPECT_FALSE(result.inserted);
+        // duplicate payload remains owned by the payload wrapper; destructor triggers release.
+    }
+    EXPECT_EQ(1, RcuTrackedValue::alive.load());
+
+    auto removal = tree_.remove_with_result(u64_varkey(200));
+    ASSERT_TRUE(removal.removed);
+    auto* ptr = removal.value.as<RcuTrackedValue>();
+    tracked_value_deleter(ptr);
+    EXPECT_EQ(0, RcuTrackedValue::alive.load());
 }
 
 // Exercise the lower-level callback API to guarantee node visitation contracts.

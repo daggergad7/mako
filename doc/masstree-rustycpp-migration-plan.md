@@ -20,14 +20,17 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 
 ### 1.2 RustyCpp Infrastructure
 - [x] Ensure rusty-cpp checker builds before compilation (`CMakeLists.txt:24`–35).
-- [ ] Add a Masstree-only CMake target running `rusty-cpp-checker` over `src/mako/masstree/*.hh` in CI.
-- [ ] Fail CI loudly when the checker binary is missing or outdated.
+- [x] Add a Masstree-only CMake target running `rusty-cpp-checker` over `src/mako/masstree/*.hh` in CI.
+- [x] Fail CI loudly when the checker binary is missing or outdated.
 - [ ] Generate per-target `@unsafe` warnings for Masstree so reviews surface unsafe usage quickly.
+- [ ] Enforce the RustyCpp call matrix: a function promoted to `@safe` may only call other `@safe`/`@unsafe` functions—no undeclared dependencies allowed.
+- [ ] Add a checker step that fails builds when STL APIs are invoked from `@safe` code without `@external` annotations.
 
 ### 1.3 Safety Guidelines
 - [ ] Draft Masstree-specific guidance describing when `@unsafe` is acceptable (RCU, raw node access, debug tooling).
 - [ ] Produce a reviewer checklist for `MasstreeValueHandle` changes (handle provenance, GC scheduling, null-handle semantics).
 - [ ] Align contracts with the silo/sto and distributed owners for shared types (`dbtuple`, `transaction`) to avoid conflicting borrow stories.
+- [ ] Provide guidance on replacing STL containers with Rusty equivalents in `@safe` contexts, or requiring explicit `@external` annotations when replacements are not feasible.
 
 ---
 
@@ -43,13 +46,15 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 ### 2.2 RCU & Memory Reclamation
 - [x] Wrap `rcu::sync::alloc/dealloc/dealloc_rcu` in `@unsafe` shims that document synchronization expectations (`src/mako/rcu.h:141`–200).
 - [x] Add debug-only provenance checks ensuring handles originate from RCU-safe allocators.
-- [ ] Extend `test/test_masstree.cc` to stress GC paths, ensuring borrowed payloads are invalidated after `dealloc_rcu`.
+- [x] Extend `test/test_masstree.cc` to stress GC paths, ensuring borrowed payloads are invalidated after `dealloc_rcu`.
 - [ ] Require `free_with_fn` callers to include explicit `@unsafe` rationales and reference tests (`src/mako/rcu.h:210`).
+- [x] Annotate the new RCU helper wrappers (`masstree::rcu_*`) explicitly so the borrow checker enforces their `@unsafe` contracts.
 
 ### 2.3 Node Mutation APIs
 - [x] Layer a safe façade (`safe_mbtree`) over `insert`, `insert_if_absent`, and `remove`, returning typed results while keeping raw variants `@unsafe` (`src/mako/masstree_btree.h:324`–377).
 - [x] Audit call sites to ensure `old_v` handles are checked before use (`src/mako/benchmarks/kvdb_wrapper_impl.h:351`, `:358`).
-- [ ] Prevent `insert_info_t` from leaking raw node pointers to other threads.
+- [x] Prevent `insert_info_t` from leaking raw node pointers to other threads.
+- [ ] Promote façade helpers to `@safe` once they no longer rely on raw pointers or STL utilities without annotations.
 
 ---
 
@@ -73,11 +78,13 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 - [ ] Update `dbtuple::tuple_writer_t` to accept `MasstreeValueHandle` or typed payloads directly (`src/mako/tuple.h:841`, `src/mako/txn_proto2_impl.h:819`–827).
 - [ ] Refactor log delta writers to avoid `const void*` plumbing (`src/mako/txn_proto2_impl.h:928`–936).
 - [ ] Document null-handle semantics as the canonical delete marker.
+- [ ] Annotate tuple-writer and logging helpers with the appropriate RustyCpp safety markers (`@unsafe` today, upgrade to `@safe` once void pointers are removed).
 
 ### 4.2 Transaction Coordination
 - [x] Feed handles through base transaction insert/commit paths (`src/mako/base_txn_btree.h:364`, `src/mako/txn_impl.h:540`).
 - [x] Ensure write-set lookups use typed accessors (`value_as_const<T>()`) (`src/mako/txn_impl.h:583`).
 - [ ] Review exception/error paths in `base_txn_btree` for correct handle propagation.
+- [ ] Audit any transaction helpers marked `@safe` to guarantee they avoid calling undeclared legacy code and adhere to RustyCpp borrow rules.
 
 ---
 
@@ -86,12 +93,13 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 ### 5.1 Benchmarks & Utilities
 - [x] Migrate `src/mako/btree.cc` helpers to the safe façade so legacy tests remain valid.
 - [x] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership (`src/mako/benchmarks/kvdb_wrapper_impl.h:339`–377).
-- [ ] Coordinate with silo/sto benchmarks so shared Masstree wrappers reflect the new API once they begin migration.
+- [ ] Replace STL containers used in `@safe` benchmark code with Rusty counterparts or annotate them via `@external` so the checker understands their safety profile.
 
 ### 5.2 Automated Checking
 - [ ] Ensure `test_masstree` runs under AddressSanitizer with borrow checking enabled in CI.
 - [ ] Gather throughput/latency baselines pre/post migration to watch for regressions (`src/mako/btree.cc` microbenchmarks).
 - [ ] Log runtime assertions that catch stale-handle use at transaction boundaries.
+- [ ] Fail CI if `rusty-cpp-checker` reports new `@safe` → undeclared call violations.
 
 ---
 
@@ -99,6 +107,7 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 - [ ] Publish a Masstree safety guide covering handles, RCU, and `@unsafe` conventions.
 - [ ] Record justifications for each remaining `@unsafe` block both inline and in docs.
 - [ ] Share weekly progress notes with silo/distributed owners; flag interface changes early.
+- [ ] Provide a quick-reference matrix (based on the RustyCpp README) mapping Masstree modules to required annotations and preferred Rusty safe types.
 
 ---
 
@@ -140,15 +149,6 @@ Each `@unsafe` section must include:
 - Links to covering tests.
 - A TODO (or plan item) if you expect to replace it with a safe façade later.
 
----
-
-## Milestone Checkpoints
-- [ ] **Week 1:** Inventory complete, guidelines published, CI checker configured.
-- [ ] **Week 3:** Safe traversal façade ready; existing code migrated away from raw callbacks.
-- [ ] **Week 5:** Transaction/logging pipeline uses typed handles; ASan + RustyCpp run clean.
-- [ ] **Week 6:** Documentation finished, performance validated, outstanding `@unsafe` items justified.
-
----
 
 ## Risk Mitigation
 1. **RCU misuse** → Add debug provenance checks and GC stress tests.
@@ -173,28 +173,3 @@ Each `@unsafe` section must include:
 - Documentation templates inherited from the RRR migration.
 
 ---
-
-## Team Considerations
-- Every Masstree PR must attach RustyCpp output and highlight `@unsafe` sections.
-- Require tests (unit or integration) covering affected paths.
-- Coordinate weekly with silo/sto and distributed owners to avoid conflicting API changes.
-
----
-
-## Timeline Summary
-
-| Week | Focus | Deliverable |
-|------|-------|-------------|
-| 0–1 | Assessment & CI | Inventory + checker gating |
-| 1–2 | Handle & GC | Safe handle semantics + GC coverage |
-| 2–3 | Traversal safety | Safe scan façade + tests |
-| 3–4 | Tx/log integration | Tuple writer overhaul |
-| 4–5 | Tooling & perf | CI sanitizers + benchmarks |
-| 5–6 | Docs & wrap-up | Guides + final sign-off |
-
----
-
-## Next Steps
-1. Finish the Phase 1 inventory tasks and circulate the findings.
-2. Begin the Phase 2 handle cleanup, focusing on `transaction::write_record_t` and log serialization.
-3. Prototype the safe traversal façade before downstream modules build new features on top of the old API.

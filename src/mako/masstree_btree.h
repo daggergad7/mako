@@ -13,6 +13,7 @@
 #include <vector>
 #include <utility>
 #include <atomic>
+#include <thread>
 
 #include <rusty/cell.hpp>
 
@@ -222,11 +223,59 @@ class mbtree {
 
   // XXX(stephentu): trying out a very opaque node API for now
   typedef node_type node_opaque_t;
-  typedef std::pair< const node_opaque_t *, uint64_t > versioned_node_t;
+  typedef std::pair<const node_opaque_t*, uint64_t> versioned_node_t;
   struct insert_info_t {
-    const node_opaque_t* node;
+    insert_info_t() noexcept
+      : node_(nullptr),
+        old_version(0),
+        new_version(0)
+#ifndef NDEBUG
+        , owner_id_(std::this_thread::get_id())
+#endif
+    {}
+
+    insert_info_t(const insert_info_t&) = delete;
+    insert_info_t& operator=(const insert_info_t&) = delete;
+    insert_info_t(insert_info_t&&) noexcept = default;
+    insert_info_t& operator=(insert_info_t&&) noexcept = default;
+
+    void capture(const node_opaque_t* node,
+                 uint64_t old_v,
+                 uint64_t new_v) noexcept {
+      node_ = node;
+      old_version = old_v;
+      new_version = new_v;
+#ifndef NDEBUG
+      owner_id_ = std::this_thread::get_id();
+#endif
+    }
+
+    void reset() noexcept {
+      node_ = nullptr;
+      old_version = 0;
+      new_version = 0;
+#ifndef NDEBUG
+      owner_id_ = std::this_thread::get_id();
+#endif
+    }
+
+    [[nodiscard]] const node_opaque_t* node() const noexcept {
+#ifndef NDEBUG
+      if (node_ && owner_id_ != std::this_thread::get_id()) {
+        INVARIANT(false && "insert_info_t accessed from non-owner thread");
+      }
+#endif
+      return node_;
+    }
+
     uint64_t old_version;
     uint64_t new_version;
+
+  private:
+    const node_opaque_t* node_;
+#ifndef NDEBUG
+    std::thread::id owner_id_;
+#endif
   };
 
   struct mutation_result_t {
@@ -668,9 +717,13 @@ inline bool mbtree<P>::insert(const key_type &k, value_type v,
     *old_v = lp.value();
   lp.value() = v;
   if (insert_info) {
-    insert_info->node = lp.node();
-    insert_info->old_version = lp.previous_full_version_value();
-    insert_info->new_version = lp.next_full_version_value(1);
+    if (!found) {
+      insert_info->capture(lp.node(),
+                           lp.previous_full_version_value(),
+                           lp.next_full_version_value(1));
+    } else {
+      insert_info->reset();
+    }
   }
   lp.finish(1, ti);
   return !found;
@@ -688,10 +741,12 @@ inline bool mbtree<P>::insert_if_absent(const key_type &k, value_type v,
     ti.observe_phantoms(lp.node());
     lp.value() = v;
     if (insert_info) {
-      insert_info->node = lp.node();
-      insert_info->old_version = lp.previous_full_version_value();
-      insert_info->new_version = lp.next_full_version_value(1);
+      insert_info->capture(lp.node(),
+                           lp.previous_full_version_value(),
+                           lp.next_full_version_value(1));
     }
+  } else if (insert_info) {
+    insert_info->reset();
   }
   lp.finish(!found, ti);
   return !found;
@@ -721,15 +776,17 @@ mbtree<P>::insert_if_absent_with_result(const key_type &k, value_type v,
     ti.observe_phantoms(lp.node());
     lp.value() = v;
     if (insert_info) {
-      insert_info->node = lp.node();
-      insert_info->old_version = lp.previous_full_version_value();
-      insert_info->new_version = lp.next_full_version_value(1);
+      insert_info->capture(lp.node(),
+                           lp.previous_full_version_value(),
+                           lp.next_full_version_value(1));
     }
     result.inserted = true;
     result.previous = value_type{};
   } else {
     result.inserted = false;
     result.previous = lp.value();
+    if (insert_info)
+      insert_info->reset();
   }
   lp.finish(!found, ti);
   return result;

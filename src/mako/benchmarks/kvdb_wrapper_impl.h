@@ -357,6 +357,7 @@ kvdb_ordered_index<UseConcurrencyControl>::put(
     INVARIANT(mutation.previous == found);
     // rcu-free the old record
     masstree::debug_assert_tracked(r);
+    // @unsafe: relies on RCU epoch reclamation; covered by Masstree GC stress tests.
     kvdb_record::release(r);
     new_record.release_raw();
     return 0;
@@ -369,6 +370,7 @@ kvdb_ordered_index<UseConcurrencyControl>::put(
   if (!mutation.inserted) {
     if (auto *const existing = mutation.previous.as<kvdb_record>()) {
       masstree::debug_assert_tracked(existing);
+      // @unsafe: releasing through RCU queue (tested via PayloadReleasedWhenInsertIfAbsentFails).
       kvdb_record::release(existing);
     }
     return 0;
