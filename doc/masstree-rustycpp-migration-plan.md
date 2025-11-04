@@ -48,7 +48,7 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 
 ### 2.3 Node Mutation APIs
 - [x] Layer a safe façade (`safe_mbtree`) over `insert`, `insert_if_absent`, and `remove`, returning typed results while keeping raw variants `@unsafe` (`src/mako/masstree_btree.h:324`–377).
-- [ ] Audit call sites to ensure `old_v` handles are checked before use (`src/mako/benchmarks/kvdb_wrapper_impl.h:351`, `:358`).
+- [x] Audit call sites to ensure `old_v` handles are checked before use (`src/mako/benchmarks/kvdb_wrapper_impl.h:351`, `:358`).
 - [ ] Prevent `insert_info_t` from leaking raw node pointers to other threads.
 
 ---
@@ -84,8 +84,8 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 ## Phase 5: Integration & Tooling 
 
 ### 5.1 Benchmarks & Utilities
-- [ ] Migrate `src/mako/btree.cc` helpers to the safe façade so legacy tests remain valid.
-- [ ] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership (`src/mako/benchmarks/kvdb_wrapper_impl.h:339`–377).
+- [x] Migrate `src/mako/btree.cc` helpers to the safe façade so legacy tests remain valid.
+- [x] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership (`src/mako/benchmarks/kvdb_wrapper_impl.h:339`–377).
 - [ ] Coordinate with silo/sto benchmarks so shared Masstree wrappers reflect the new API once they begin migration.
 
 ### 5.2 Automated Checking
