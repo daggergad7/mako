@@ -186,19 +186,19 @@ protected:
     };
 
     constexpr inline write_record_t()
-      : tuple(), k(), r(), w(), btr()
+      : tuple(), k(), value(MasstreeValueHandle::null()), w(), btr()
     {}
 
     // all inputs are assumed to be stable
     inline write_record_t(dbtuple *tuple,
                           const string_type *k,
-                          const void *r,
+                          MasstreeValueHandle value_handle,
                           dbtuple::tuple_writer_t w,
                           concurrent_btree *btr,
                           bool insert)
       : tuple(tuple),
         k(k),
-        r(r),
+        value(value_handle),
         w(w),
         btr(btr)
     {
@@ -240,10 +240,32 @@ protected:
     {
       return *k;
     }
-    inline const void *
-    get_value() const
+    inline MasstreeValueHandle
+    get_value_handle() const
     {
-      return r;
+      return value;
+    }
+    inline const void *
+    value_ptr() const
+    {
+      return reinterpret_cast<const void *>(value.bits);
+    }
+    template <typename T>
+    inline T *
+    value_as() const
+    {
+      return value.as<T>();
+    }
+    template <typename T>
+    inline const T *
+    value_as_const() const
+    {
+      return value.as_const<T>();
+    }
+    inline bool
+    has_value() const
+    {
+      return static_cast<bool>(value);
     }
     inline dbtuple::tuple_writer_t
     get_writer() const
@@ -253,7 +275,7 @@ protected:
   private:
     dbtuple *tuple;
     const string_type *k;
-    const void *r;
+    MasstreeValueHandle value;
     dbtuple::tuple_writer_t w;
     marked_ptr<concurrent_btree> btr; // first bit for inserted, 2nd for dowrite
   };
@@ -369,7 +391,7 @@ operator<<(
 {
   o << "[tuple=" << r.get_tuple()
     << ", key=" << util::hexify(r.get_key())
-    << ", value=" << util::hexify(r.get_value())
+    << ", value=" << util::hexify(r.value_ptr())
     << ", insert=" << r.is_insert()
     << ", do_write=" << r.do_write()
     << ", btree=" << r.get_btree()

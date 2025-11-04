@@ -31,6 +31,18 @@ class value_print {
 };
 
 template <>
+class value_print<MasstreeValueHandle> {
+  public:
+    static void print(MasstreeValueHandle value, FILE* f, const char* prefix,
+                      int indent, Str key, kvtimestamp_t,
+                      char* suffix) {
+        auto raw = value.get();
+        fprintf(f, "%s%*s%.*s = %p%s\n",
+                prefix, indent, "", key.len, key.s, raw, suffix);
+    }
+};
+
+template <>
 class value_print<unsigned char*> {
   public:
     static void print(unsigned char* value, FILE* f, const char* prefix,

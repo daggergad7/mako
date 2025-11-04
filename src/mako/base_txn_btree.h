@@ -229,7 +229,7 @@ base_txn_btree<Transaction, P>::do_search(
   concurrent_btree::versioned_node_t search_info;
   const bool found = this->underlying_btree.search(varkey(*key_str), underlying_v, &search_info);
   if (found) {
-    const dbtuple * const tuple = reinterpret_cast<const dbtuple *>(underlying_v);
+    const dbtuple * const tuple = underlying_v.as_const<dbtuple>();
     return t.do_tuple_read(tuple, value_reader);
   } else {
     // not found, add to absent_set
@@ -270,7 +270,7 @@ void
 base_txn_btree<Transaction, P>::purge_tree_walker::on_node_success()
 {
   for (size_t i = 0; i < spec_values.size(); i++) {
-    dbtuple *tuple = (dbtuple *) spec_values[i].first;
+    dbtuple *tuple = spec_values[i].first.as<dbtuple>();
     INVARIANT(tuple);
 #ifdef TXN_BTREE_DUMP_PURGE_STATS
     // XXX(stephentu): should we also walk the chain?
@@ -351,7 +351,7 @@ retry:
   }
   if (!px) {
     // do regular search
-    typename concurrent_btree::value_type bv = 0;
+    typename concurrent_btree::value_type bv{};
     if (!this->underlying_btree.search(varkey(*k), bv)) {
       // XXX(stephentu): if we are removing a key and we can't find it, then we
       // should just treat this as a read [of an empty-value], instead of
@@ -359,12 +359,14 @@ retry:
       expect_new = true;
       goto retry;
     }
-    px = reinterpret_cast<dbtuple *>(bv);
+    px = bv.as<dbtuple>();
   }
   INVARIANT(px);
   if (!insert) {
     // add to write set normally, as non-insert
-    t.write_set.emplace_back(px, k, v, writer, &this->underlying_btree, false);
+    const MasstreeValueHandle handle =
+        v ? MasstreeValueHandle::from_ptr(v) : MasstreeValueHandle::null();
+    t.write_set.emplace_back(px, k, handle, writer, &this->underlying_btree, false);
   } else {
     // should already exist in write set as insert
     // (because of try_insert_new_tuple())
@@ -403,8 +405,8 @@ base_txn_btree<Transaction, P>
   t->ensure_active();
   VERBOSE(std::cerr << "search range k: " << util::hexify(k) << " from <node=0x" << util::hexify(n)
                     << ", version=" << version << ">" << std::endl
-                    << "  " << *((dbtuple *) v) << std::endl);
-  const dbtuple * const tuple = reinterpret_cast<const dbtuple *>(v);
+                    << "  " << *(v.as<dbtuple>()) << std::endl);
+  const dbtuple * const tuple = v.as<const dbtuple>();
   if (t->do_tuple_read(tuple, *value_reader))
     return caller_callback->invoke(
         (*key_reader)(k), value_reader->results());

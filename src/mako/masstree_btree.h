@@ -14,6 +14,8 @@
 #include <utility>
 #include <atomic>
 
+#include <rusty/cell.hpp>
+
 #include "log2.hh"
 #include "varkey.h"
 #include "counter.h"
@@ -24,6 +26,11 @@
 #include "util.h"
 #include "ownership_checker.h"
 
+// RustyCpp migration note:
+// The Masstree wrapper still leans heavily on raw pointers and RCU era memory
+// pooling.  We start by annotating all entry points as unsafe surfaces so the
+// borrow checker understands that callers must enforce aliasing/lifetime rules.
+
 #include "masstree/masstree_scan.hh"
 #include "masstree/masstree_insert.hh"
 #include "masstree/masstree_remove.hh"
@@ -32,10 +39,24 @@
 #include "masstree/mtcounters.hh"
 #include "masstree/circular_int.hh"
 
+// @unsafe
+// SAFETY: RCU helpers expose raw allocation/deallocation entry points that rely
+// on external synchronization.  Callers must ensure lifetime/aliasing manually.
 class simple_threadinfo {
  public:
     simple_threadinfo()
         : ts_(0) { // XXX?
+    }
+
+    // Copy semantics clone the inner timestamp so value semantics remain intact.
+    simple_threadinfo(const simple_threadinfo& other)
+        : ts_(other.ts_.get()) {
+    }
+
+    // Assignment mirrors the copy constructor; required because rusty::Cell is non-copyable.
+    simple_threadinfo& operator=(const simple_threadinfo& other) {
+        ts_.set(other.ts_.get());
+        return *this;
     }
     class mrcu_callback {
     public:
@@ -55,30 +76,34 @@ class simple_threadinfo {
       return 0;
     }
     kvtimestamp_t update_timestamp() const {
-	return ts_;
+	return ts_.get();
     }
     kvtimestamp_t update_timestamp(kvtimestamp_t x) const {
-	if (circular_int<kvtimestamp_t>::less_equal(ts_, x))
+	auto current = ts_.get();
+	if (circular_int<kvtimestamp_t>::less_equal(current, x)) {
 	    // x might be a marker timestamp; ensure result is not
-	    ts_ = (x | 1) + 1;
-	return ts_;
+	    ts_.set((x | 1) + 1);
+	}
+	return ts_.get();
     }
     kvtimestamp_t update_timestamp(kvtimestamp_t x, kvtimestamp_t y) const {
 	if (circular_int<kvtimestamp_t>::less(x, y))
 	    x = y;
-	if (circular_int<kvtimestamp_t>::less_equal(ts_, x))
+	auto current = ts_.get();
+	if (circular_int<kvtimestamp_t>::less_equal(current, x))
 	    // x might be a marker timestamp; ensure result is not
-	    ts_ = (x | 1) + 1;
-	return ts_;
+	    ts_.set((x | 1) + 1);
+	return ts_.get();
     }
     void increment_timestamp() {
-	ts_ += 2;
+	ts_.update([](kvtimestamp_t value) { return value + 2; });
     }
     template <typename T>
     void observe_phantoms(T* n) {
         kvtimestamp_t pe = n->phantom_epoch_[0];
-	if (circular_int<kvtimestamp_t>::less(ts_, pe))
-	    ts_ = pe;
+	auto current = ts_.get();
+	if (circular_int<kvtimestamp_t>::less(current, pe))
+	    ts_.set(pe);
     }
 
     // event counters
@@ -154,11 +179,12 @@ class simple_threadinfo {
     }
 
   private:
-    mutable kvtimestamp_t ts_;
+    // Interior mutability permits const-qualified APIs to bump the epoch safely.
+    rusty::Cell<kvtimestamp_t> ts_;
 };
 
 struct masstree_params : public Masstree::nodeparams<> {
-  typedef uint8_t* value_type;
+  typedef MasstreeValueHandle value_type;
   typedef Masstree::value_print<value_type> value_print_type;
   typedef simple_threadinfo threadinfo_type;
   enum { RcuRespCaller = true };
@@ -168,6 +194,9 @@ struct masstree_single_threaded_params : public masstree_params {
   static constexpr bool concurrent = false;
 };
 
+// @unsafe
+// SAFETY: Masstree nodes are manipulated through raw pointers and epoch-based
+// reclamation.  Operations require external synchronization/transactional logic.
 template <typename P>
 class mbtree {
  public:
@@ -256,6 +285,9 @@ public:
           /** NOTE: the public interface assumes that the caller has taken care
            * of setting up RCU */
 
+  // @unsafe
+  // SAFETY: Returns raw value pointers owned by Masstree; caller must respect
+  // Masstree's RCU rules and avoid aliasing/mutation without locks.
   inline bool search(const key_type &k, value_type &v,
                      versioned_node_t *search_info = nullptr) const;
 
@@ -391,6 +423,9 @@ public:
    * If false and old_v is not NULL, then the overwritten value of v
    * is written into old_v
    */
+  // @unsafe
+  // SAFETY: Mutates tree structure via raw pointers while holding internal
+  // locks; caller must ensure the provided value outlives any concurrent users.
   inline bool
   insert(const key_type &k, value_type v,
          value_type *old_v = NULL,
@@ -400,6 +435,9 @@ public:
    * Only puts k=>v if k does not exist in map. returns true
    * if k inserted, false otherwise (k exists already)
    */
+  // @unsafe
+  // SAFETY: Same pointer-lifetime caveats as insert(); absence check relies on
+  // Masstree internal locking, but caller owns the pointed-to payload.
   inline bool
   insert_if_absent(const key_type &k, value_type v,
                    insert_info_t *insert_info = NULL);
@@ -410,6 +448,9 @@ public:
    * if true and old_v is not NULL, then the removed value of v
    * is written into old_v
    */
+  // @unsafe
+  // SAFETY: Returns pointer to removed value without transferring ownership.
+  // Callers must recycle or free through Masstree-aware mechanisms.
   inline bool
   remove(const key_type &k, value_type *old_v = NULL);
 

@@ -18,6 +18,7 @@
 #include "compiler.hh"
 #include "str.hh"
 #include "ksearch.hh"
+#include "value_handle.hh"
 
 namespace Masstree {
 using lcdf::Str;

@@ -21,8 +21,8 @@ using ValueType = typename Tree::value_type;
 using StringType = typename Tree::string_type;
 
 // Decode helpers keep assertions readable by working with integers directly.
-uint64_t DecodeValue(ValueType ptr) {
-    return ptr ? *reinterpret_cast<uint64_t*>(ptr) : 0ULL;
+uint64_t DecodeValue(ValueType handle) {
+    return handle ? *handle.as<uint64_t>() : 0ULL;
 }
 
 uint64_t DecodeKey(const StringType& str) {
@@ -41,7 +41,7 @@ protected:
     // Every stored value lives in this vector so lifetimes outlast tree operations.
     ValueType storeValue(uint64_t v) {
         values_.push_back(std::make_unique<uint64_t>(v));
-        return reinterpret_cast<ValueType>(values_.back().get());
+        return make_value_handle(values_.back().get());
     }
 
     // Thin wrapper around mbtree::search for balance between ergonomics and control.
@@ -327,13 +327,13 @@ TEST_F(MasstreeBTreeTest, StringKeysMaintainLexicographicOrder) {
 
 // Guard against helper parameters being mutated when lookups fail.
 TEST_F(MasstreeBTreeTest, SearchMissingKeyDoesNotModifyOutputs) {
-    ValueType raw = reinterpret_cast<ValueType>(0xdeadbeef);
+    auto raw = make_value_handle(static_cast<std::uintptr_t>(0xdeadbeef));
     Tree::versioned_node_t info(
         reinterpret_cast<const Tree::node_opaque_t*>(0x1),
         123);
 
     EXPECT_FALSE(tree_.search(u64_varkey(999), raw, &info));
-    EXPECT_EQ(reinterpret_cast<ValueType>(0xdeadbeef), raw);
+    EXPECT_EQ(make_value_handle(static_cast<std::uintptr_t>(0xdeadbeef)), raw);
     EXPECT_EQ(0U, info.second);
 }
 

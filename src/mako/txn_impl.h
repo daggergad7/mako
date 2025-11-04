@@ -86,7 +86,7 @@ transaction<Protocol, Traits>::cleanup_inserted_tuple_marker(
   INVARIANT(marker->version == dbtuple::MAX_TID);
   INVARIANT(marker->is_locked());
   INVARIANT(marker->is_lock_owner());
-  typename concurrent_btree::value_type removed = 0;
+  typename concurrent_btree::value_type removed{};
   const bool did_remove = btr->remove(varkey(key), &removed);
   if (unlikely(!did_remove)) {
 #ifdef CHECK_INVARIANTS
@@ -97,7 +97,7 @@ transaction<Protocol, Traits>::cleanup_inserted_tuple_marker(
 #endif
     ALWAYS_ASSERT(false);
   }
-  INVARIANT(removed == (typename concurrent_btree::value_type) marker);
+  INVARIANT(removed.as<dbtuple>() == marker);
   INVARIANT(marker->is_latest());
   marker->clear_latest();
   dbtuple::release(marker); // rcu free
@@ -408,7 +408,7 @@ transaction<Protocol, Traits>::commit(bool doThrow)
           const dbtuple::write_record_ret ret =
             tuple->write_record_at(
                 cast(), commit_tid.second,
-                it->get_value(), it->get_writer());
+                it->value_ptr(), it->get_writer());
           bool unlock_head = false;
           if (unlikely(ret.head_ != tuple)) {
             // tuple was replaced by ret.head_
@@ -418,12 +418,12 @@ transaction<Protocol, Traits>::commit(bool doThrow)
             unlock_head = true;
             // need to unlink tuple from underlying btree, replacing
             // with ret.rest_ (atomically)
-            typename concurrent_btree::value_type old_v = 0;
+            typename concurrent_btree::value_type old_v{};
             if (it->get_btree()->insert(
-                  varkey(it->get_key()), (typename concurrent_btree::value_type) ret.head_, &old_v, NULL))
+                  varkey(it->get_key()), make_value_handle(ret.head_), &old_v, NULL))
               // should already exist in tree
               INVARIANT(false);
-            INVARIANT(old_v == (typename concurrent_btree::value_type) tuple);
+            INVARIANT(old_v.as<dbtuple>() == tuple);
             // we don't RCU free this, because it is now part of the chain
             // (the cleaners will take care of this)
             ++evt_dbtuple_latest_replacement;
@@ -431,7 +431,7 @@ transaction<Protocol, Traits>::commit(bool doThrow)
           if (unlikely(ret.rest_))
             // spill happened: schedule GC task
             cast()->on_dbtuple_spill(ret.head_, ret.rest_);
-          if (!it->get_value())
+          if (!it->has_value())
             // logical delete happened: schedule GC task
             cast()->on_logical_delete(ret.head_, it->get_key(), it->get_btree());
           if (unlikely(unlock_head))
@@ -527,7 +527,7 @@ transaction<Protocol, Traits>::try_insert_new_tuple(
   // fails- this would allow us to avoid having to do another search
   typename concurrent_btree::insert_info_t insert_info;
   if (unlikely(!btr.insert_if_absent(
-          varkey(*key), (typename concurrent_btree::value_type) tuple, &insert_info))) {
+          varkey(*key), make_value_handle(tuple), &insert_info))) {
     VERBOSE(std::cerr << "insert_if_absent failed for key: " << util::hexify(key) << std::endl);
     tuple->clear_latest();
     tuple->unlock();
@@ -540,7 +540,9 @@ transaction<Protocol, Traits>::try_insert_new_tuple(
   // update write_set
   // too expensive to be practical
   // INVARIANT(find_write_set(tuple) == write_set.end());
-  write_set.emplace_back(tuple, key, value, writer, &btr, true);
+  const MasstreeValueHandle handle =
+      value ? MasstreeValueHandle::from_ptr(value) : MasstreeValueHandle::null();
+  write_set.emplace_back(tuple, key, handle, writer, &btr, true);
 
   // update node #s
   INVARIANT(insert_info.node);
@@ -581,11 +583,10 @@ transaction<Protocol, Traits>::do_tuple_read(
     auto write_set_it = find_write_set(const_cast<dbtuple *>(tuple));
     if (unlikely(write_set_it != write_set.end())) {
       ++evt_local_search_write_set_hits;
-      if (!write_set_it->get_value())
+      if (!write_set_it->has_value())
         return false;
       const typename ValueReader::value_type * const px =
-        reinterpret_cast<const typename ValueReader::value_type *>(
-            write_set_it->get_value());
+        write_set_it->template value_as_const<typename ValueReader::value_type>();
       value_reader.dup(*px, this->string_allocator());
       return true;
     }

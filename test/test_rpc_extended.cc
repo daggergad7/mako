@@ -6,6 +6,11 @@
 #include <random>
 #include <rusty/arc.hpp>
 #include <rusty/mutex.hpp>
+#include <cerrno>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include "reactor/reactor.h"
 #include "rpc/client.hpp"
 #include "rpc/server.hpp"
@@ -74,23 +79,32 @@ public:
 class ExtendedRPCTest : public ::testing::Test {
 protected:
     rusty::Arc<PollThreadWorker> poll_thread_worker_;
-    Server* server;
-    ExtendedTestService* service;
-    static constexpr int test_port_base = 9000;
-    static std::atomic<int> port_offset;
+    Server* server = nullptr;
+    ExtendedTestService* service = nullptr;
     int current_port;
+    std::string server_address_;
 
     void SetUp() override {
-        current_port = test_port_base + port_offset++;
-
-        // Create PollThreadWorker Arc<Mutex<>>
         poll_thread_worker_ = PollThreadWorker::create();
 
-        // Server now takes Arc<Mutex<>>
+        int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+        ASSERT_GE(sock, 0) << "socket() failed: " << strerror(errno);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        ASSERT_EQ(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0) << "bind() failed: " << strerror(errno);
+        socklen_t len = sizeof(addr);
+        ASSERT_EQ(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len), 0) << "getsockname() failed: " << strerror(errno);
+        current_port = ntohs(addr.sin_port);
+        ASSERT_GT(current_port, 0);
+        ::close(sock);
+
+        server_address_ = "127.0.0.1:" + std::to_string(current_port);
         server = new Server(poll_thread_worker_);
         service = new ExtendedTestService();
         server->reg(service);
-        ASSERT_EQ(server->start(("0.0.0.0:" + std::to_string(current_port)).c_str()), 0);
+        ASSERT_EQ(server->start(server_address_.c_str()), 0);
     }
 
     void TearDown() override {
@@ -103,8 +117,6 @@ protected:
     }
 };
 
-std::atomic<int> ExtendedRPCTest::port_offset{0};
-
 // Test 1: Multiple clients connecting to the same server
 TEST_F(ExtendedRPCTest, MultipleClients) {
     const int num_clients = 10;
@@ -113,7 +125,7 @@ TEST_F(ExtendedRPCTest, MultipleClients) {
     // Create multiple clients
     for (int i = 0; i < num_clients; i++) {
         auto client = std::make_shared<Client>(poll_thread_worker_);
-        ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+        ASSERT_EQ(client->connect(server_address_.c_str()), 0);
         clients.push_back(client);
     }
 
@@ -146,7 +158,7 @@ TEST_F(ExtendedRPCTest, MultipleClients) {
 // Test 2: Client reconnection after disconnect
 TEST_F(ExtendedRPCTest, ClientReconnection) {
     auto client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     // Make initial request
     Future* fu1 = client->begin_request(benchmark::BenchmarkService::FAST_NOP);
@@ -168,7 +180,7 @@ TEST_F(ExtendedRPCTest, ClientReconnection) {
     client = std::make_shared<Client>(poll_thread_worker_);
 
     // Reconnect
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     // Make another request
     Future* fu2 = client->begin_request(benchmark::BenchmarkService::FAST_NOP);
@@ -188,7 +200,7 @@ TEST_F(ExtendedRPCTest, ClientReconnection) {
 // Test 3: Request timeout handling
 TEST_F(ExtendedRPCTest, RequestTimeout) {
     auto client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     // Set service to delay longer than timeout
     service->should_delay = true;
@@ -222,7 +234,7 @@ TEST_F(ExtendedRPCTest, RapidConnectDisconnect) {
 
     for (int i = 0; i < num_cycles; i++) {
         auto client = std::make_shared<Client>(poll_thread_worker_);
-        ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+        ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
         // Make a quick request
         Future* fu = client->begin_request(benchmark::BenchmarkService::FAST_NOP);
@@ -247,7 +259,7 @@ TEST_F(ExtendedRPCTest, RapidConnectDisconnect) {
 // Test 5: Mixed payload sizes
 TEST_F(ExtendedRPCTest, MixedPayloadSizes) {
     auto client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     std::vector<int> sizes = {1, 10, 100, 1000, 10000, 100000, 1000000};
     std::vector<Future*> futures;
@@ -275,7 +287,7 @@ TEST_F(ExtendedRPCTest, MixedPayloadSizes) {
 // Test 6: Burst traffic pattern
 TEST_F(ExtendedRPCTest, BurstTraffic) {
     auto client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     const int burst_size = 100;
     const int num_bursts = 5;
@@ -319,7 +331,7 @@ TEST_F(ExtendedRPCTest, BurstTraffic) {
 // Test 7: Interleaved request types
 TEST_F(ExtendedRPCTest, InterleavedRequestTypes) {
     auto client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     std::vector<Future*> futures;
 
@@ -379,7 +391,7 @@ TEST_F(ExtendedRPCTest, InterleavedRequestTypes) {
 // Test 8: Pipelined requests (send multiple before waiting)
 TEST_F(ExtendedRPCTest, PipelinedRequests) {
     auto client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
     const int pipeline_depth = 50;
     std::vector<Future*> futures;

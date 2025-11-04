@@ -418,10 +418,12 @@ TEST_F(ReactorTest, StressTest) {
         std::this_thread::sleep_for(milliseconds(10));
     }
 
-    // Wait for processing
-    std::this_thread::sleep_for(milliseconds(500));
+    const int expected_total = num_fds * events_per_fd;
+    for (int attempt = 0; attempt < 20 && total_events.load() < expected_total; ++attempt) {
+        std::this_thread::sleep_for(milliseconds(100));
+    }
 
-    EXPECT_EQ(total_events, num_fds * events_per_fd);
+    EXPECT_EQ(total_events, expected_total);
 
     // Cleanup
     {

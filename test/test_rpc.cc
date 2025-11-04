@@ -3,6 +3,11 @@
 #include <chrono>
 #include <thread>
 #include <unistd.h>
+#include <cerrno>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <rusty/arc.hpp>
 #include <rusty/mutex.hpp>
 #include "reactor/reactor.h"
@@ -64,32 +69,45 @@ public:
 class RPCTest : public ::testing::Test {
 protected:
     rusty::Arc<PollThreadWorker> poll_thread_worker_;  // Shared Arc<PollThreadWorker>
-    Server* server;
-    TestService* service;
+    Server* server = nullptr;
+    TestService* service = nullptr;
     std::shared_ptr<Client> client;
-    static constexpr int test_port = 8848;
+    int current_port;
+    std::string server_address_;
 
     void SetUp() override {
         // Create PollThreadWorker Arc
         poll_thread_worker_ = PollThreadWorker::create();
 
-        // Server now takes Arc<PollThreadWorker>
+        int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+        ASSERT_GE(sock, 0) << "socket() failed: " << strerror(errno);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        ASSERT_EQ(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0) << "bind() failed: " << strerror(errno);
+        socklen_t len = sizeof(addr);
+        ASSERT_EQ(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len), 0) << "getsockname() failed: " << strerror(errno);
+        current_port = ntohs(addr.sin_port);
+        ASSERT_GT(current_port, 0);
+        ::close(sock);
+
         server = new Server(poll_thread_worker_);
         service = new TestService();
-
         server->reg(service);
-
-        ASSERT_EQ(server->start(("0.0.0.0:" + std::to_string(test_port)).c_str()), 0);
+        server_address_ = "127.0.0.1:" + std::to_string(current_port);
+        ASSERT_EQ(server->start(server_address_.c_str()), 0);
 
         // Client takes Arc<Mutex<>>
         client = std::make_shared<Client>(poll_thread_worker_);
-        ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(test_port)).c_str()), 0);
+        ASSERT_EQ(client->connect(server_address_.c_str()), 0);
 
         std::this_thread::sleep_for(milliseconds(100));
     }
 
     void TearDown() override {
         client->close();
+        client.reset();
 
         delete service;
         delete server;  // Server destructor waits for connections to close
@@ -293,7 +311,7 @@ TEST_F(RPCTest, ConnectionResilience) {
 
     // Create new client with Arc<Mutex<>>
     client = std::make_shared<Client>(poll_thread_worker_);
-    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(test_port)).c_str()), 0);
+    ASSERT_EQ(client->connect(("127.0.0.1:" + std::to_string(current_port)).c_str()), 0);
 
     std::this_thread::sleep_for(milliseconds(100));
 
@@ -445,9 +463,9 @@ TEST_F(RPCTest, MultiThreadedStressTest) {
 
         // Spawn thread with explicit parameter passing (enforces Send trait)
         auto handle = rusty::thread::spawn(
-            [](rusty::Arc<PollThreadWorker> worker,
-               int tid,
-               int requests) -> std::pair<int, int> {
+            [server_endpoint = server_address_](rusty::Arc<PollThreadWorker> worker,
+                                                int tid,
+                                                int requests) -> std::pair<int, int> {
                 int thread_successes = 0;
                 int thread_failures = 0;
 
@@ -455,7 +473,7 @@ TEST_F(RPCTest, MultiThreadedStressTest) {
                 auto thread_client = std::make_shared<Client>(worker);
 
                 // Connect to server
-                int conn_result = thread_client->connect("127.0.0.1:8848");
+                int conn_result = thread_client->connect(server_endpoint.c_str());
                 if (conn_result != 0) {
                     thread_failures++;
                     return {thread_successes, thread_failures};

@@ -572,6 +572,18 @@ ServerListener::ServerListener(Server* server, string addr) {
     }
 
     if (::bind(server_sock_, rp->ai_addr, rp->ai_addrlen) == 0) {
+      // Update address with actual assigned port if port was zero
+      if (rp->ai_addr->sa_family == AF_INET) {
+        sockaddr_in sin{};
+        socklen_t len = sizeof(sin);
+        if (getsockname(server_sock_, reinterpret_cast<sockaddr*>(&sin), &len) == 0) {
+          auto assigned_port = ntohs(sin.sin_port);
+          if (assigned_port != 0) {
+            server_->addr_ = host + ":" + std::to_string(assigned_port);
+            addr_ = server_->addr_;
+          }
+        }
+      }
       break;  // Successfully bound
     } else {
       Log_error("port bind error for %s:%s, errno: %d (%s)", host.c_str(), port.c_str(), errno, strerror(errno));

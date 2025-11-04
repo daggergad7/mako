@@ -15,6 +15,7 @@
 #include "circbuf.h"
 #include "spinbarrier.h"
 #include "record/serializer.h"
+#include "masstree/value_handle.hh"
 
 // forward decl
 template <typename Traits> class transaction_proto2;
@@ -509,7 +510,7 @@ protected:
     uint64_t trigger_tid_;
 #endif
 
-    dbtuple *tuple_;
+    MasstreeValueHandle tuple_handle_;
     marked_ptr<std::string> key_;
     concurrent_btree *btr_;
 
@@ -519,7 +520,7 @@ protected:
         tuple_ahead_(nullptr),
         trigger_tid_(0),
 #endif
-        tuple_(),
+        tuple_handle_(MasstreeValueHandle::null()),
         key_(),
         btr_(nullptr) {}
 
@@ -533,14 +534,20 @@ protected:
         tuple_ahead_(tuple_ahead),
         trigger_tid_(trigger_tid),
 #endif
-        tuple_(tuple),
+        tuple_handle_(MasstreeValueHandle::from_ptr(tuple)),
         key_(key),
         btr_(btr) {}
 
     inline dbtuple *
     tuple()
     {
-      return tuple_;
+      return tuple_handle_.as<dbtuple>();
+    }
+
+    inline const dbtuple *
+    tuple() const
+    {
+      return tuple_handle_.as_const<dbtuple>();
     }
   };
 
@@ -809,10 +816,10 @@ public:
       space_needed += vs_uint32_t.nbytes(&k_nbytes);
       space_needed += k_nbytes;
 
-      const uint32_t v_nbytes = rec.get_value() ?
+      const uint32_t v_nbytes = rec.has_value() ?
           rec.get_writer()(
               dbtuple::TUPLE_WRITER_COMPUTE_DELTA_NEEDED,
-              rec.get_value(), nullptr, 0) : 0;
+              rec.value_ptr(), nullptr, 0) : 0;
       space_needed += vs_uint32_t.nbytes(&v_nbytes);
       space_needed += v_nbytes;
 
@@ -928,7 +935,7 @@ private:
       const uint32_t v_nbytes = value_sizes[idx];
       p = vs_uint32_t.write(p, v_nbytes);
       if (v_nbytes) {
-        rec.get_writer()(dbtuple::TUPLE_WRITER_DO_DELTA_WRITE, rec.get_value(), p, v_nbytes);
+        rec.get_writer()(dbtuple::TUPLE_WRITER_DO_DELTA_WRITE, rec.value_ptr(), p, v_nbytes);
         p += v_nbytes;
       }
     }
