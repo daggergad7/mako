@@ -172,7 +172,11 @@ public:
     }
 
 
-    Client(rusty::Arc<PollThreadWorker> poll_thread_worker): poll_thread_worker_(poll_thread_worker), sock_(-1), status_(NEW) { }
+    Client(rusty::Arc<PollThreadWorker> poll_thread_worker)
+        : poll_thread_worker_(poll_thread_worker),
+          sock_(-1),
+          status_(NEW),
+          bmark_(nullptr) { }
 
     // Factory method to create Client with shared_ptr and add to poll_thread_worker
     static std::shared_ptr<Client> create(rusty::Arc<PollThreadWorker> poll_thread_worker) {

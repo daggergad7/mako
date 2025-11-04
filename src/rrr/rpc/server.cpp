@@ -90,7 +90,7 @@ SpinLock ServerConnection::rpc_id_missing_l_s;
 // @unsafe - Initializes connection and updates counter
 // SAFETY: Counter operations are thread-safe
 ServerConnection::ServerConnection(Server* server, int socket)
-        : server_(server), socket_(socket), status_(CONNECTED) {
+        : server_(server), socket_(socket), bmark_(nullptr), status_(CONNECTED) {
     // increase number of open connections
     server_->sconns_ctr_.next(1);
     block_read_in.init_block_read(100000000);
@@ -132,7 +132,7 @@ void ServerConnection::end_reply() {
     if (bmark_.get() != nullptr) {
         i32 reply_size = out_.get_and_reset_write_cnt();
         out_.write_bookmark(bmark_.get(), &reply_size);
-        bmark_ = rusty::Box<Marshal::bookmark>();  // Reset to empty Box (automatically deletes old value)
+        bmark_.reset();
     }
 
     // only update poll mode if connection is still active
