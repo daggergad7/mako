@@ -37,6 +37,20 @@ endif()
 
 enable_borrow_checking()
 
+if(NOT EXISTS ${CPP_BORROW_CHECKER})
+    message(FATAL_ERROR "rusty-cpp-checker not found at ${CPP_BORROW_CHECKER}. Please build it (run cargo build) before configuring.")
+endif()
+
+add_custom_target(masstree_borrow_check
+    COMMAND ${CPP_BORROW_CHECKER} --project-root ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/value_handle.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/payload.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree_btree.h
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS build_rusty_cpp_checker
+    COMMENT "Running rusty-cpp-checker against Masstree headers"
+)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(DPDK REQUIRED libdpdk)
 
