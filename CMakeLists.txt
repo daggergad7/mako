@@ -25,21 +25,7 @@ set(RUSTYCPP_BUILD_TYPE "release")  # or "debug"
 set(RUSTYCPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/rusty-cpp")
 set(CPP_BORROW_CHECKER "${RUSTYCPP_DIR}/target/${RUSTYCPP_BUILD_TYPE}/rusty-cpp-checker")
 
-# Create a custom command to build the checker if it doesn't exist
-if(NOT EXISTS ${CPP_BORROW_CHECKER})
-    message(STATUS "Building rusty-cpp-checker binary...")
-    execute_process(
-        COMMAND cargo build --${RUSTYCPP_BUILD_TYPE}
-        WORKING_DIRECTORY ${RUSTYCPP_DIR}
-        RESULT_VARIABLE BUILD_RESULT
-    )
-endif()
-
 enable_borrow_checking()
-
-if(NOT EXISTS ${CPP_BORROW_CHECKER})
-    message(FATAL_ERROR "rusty-cpp-checker not found at ${CPP_BORROW_CHECKER}. Please build it (run cargo build) before configuring.")
-endif()
 
 add_custom_target(masstree_borrow_check
     COMMAND ${CPP_BORROW_CHECKER} --project-root ${CMAKE_CURRENT_SOURCE_DIR}

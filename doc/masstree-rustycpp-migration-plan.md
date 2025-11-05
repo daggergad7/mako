@@ -100,7 +100,7 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 - [ ] Ensure `test_masstree` runs under AddressSanitizer with borrow checking enabled in CI.
 - [ ] Gather throughput/latency baselines pre/post migration to watch for regressions (`src/mako/btree.cc` microbenchmarks).
 - [ ] Log runtime assertions that catch stale-handle use at transaction boundaries.
-- [ ] Fail CI if `rusty-cpp-checker` reports new `@safe` → undeclared call violations.
+- [ ] Fail CI if `rusty-cpp-checker` reports new `@safe` → undeclared call violations, and ensure the checker itself builds automatically via the new target.
 
 ---
 
