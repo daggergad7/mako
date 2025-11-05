@@ -32,6 +32,16 @@ add_custom_target(masstree_borrow_check
             ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/value_handle.hh
             ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/payload.hh
             ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree_btree.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/circular_int.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/config.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/masstree.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/masstree_insert.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/masstree_print.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/masstree_remove.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/masstree_scan.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/mtcounters.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/rcu_utils.hh
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/mako/masstree/timestamp.hh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS build_rusty_cpp_checker
     COMMENT "Running rusty-cpp-checker against Masstree headers"
