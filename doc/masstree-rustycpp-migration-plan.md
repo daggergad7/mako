@@ -25,6 +25,7 @@ Masstree backs Mako’s main storage layer. This track delivers a RustyCpp-check
 - [ ] Generate per-target `@unsafe` warnings for Masstree so reviews surface unsafe usage quickly.
 - [ ] Enforce the RustyCpp call matrix: a function promoted to `@safe` may only call other `@safe`/`@unsafe` functions—no undeclared dependencies allowed.
 - [ ] Add a checker step that fails builds when STL APIs are invoked from `@safe` code without `@external` annotations.
+- [x] Auto-update the `third-party/rusty-cpp` checkout to the latest `origin/main` during configuration.
 
 ### 1.3 Safety Guidelines
 - [ ] Draft Masstree-specific guidance describing when `@unsafe` is acceptable (RCU, raw node access, debug tooling).
