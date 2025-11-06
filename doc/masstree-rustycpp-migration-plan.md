@@ -1,202 +1,108 @@
-# Masstree RustyCpp Memory Safety Migration Plan
+# Masstree RustyCpp Memory-Safety Migration Plan
 
 ## Overview
+Masstree is the core storage engine in Mako. This plan tracks our migration to RustyCpp so that Masstree’s interface is memory-safe, with `@unsafe` blocks kept explicit and justified.
 
-This document outlines the plan to make the Masstree library memory-safe using rusty-cpp borrow checking. The goal is to mark all functions as safe and only use `unsafe` when absolutely necessary.
+---
 
-## Phase 1: Assessment and Preparation (Week 1)
+## Phase 1: Assessment & Preparation
 
 ### 1.1 Inventory Current State
+- [x] Check every Masstree entry point marked `// @unsafe`, document the invariants, and note callers (`src/mako/masstree_btree.h`, etc.).
+- [x] Check RCU allocation/free flows in `rcu::sync` and list Masstree sites relying on them (`src/mako/rcu.h:141`–196, `src/mako/masstree_btree.h:132`–173).
+- [x] Enumerate `MasstreeValueHandle` producers/consumers across Mako to validate ownership expectations.
 
-- [x] Count total files in `src/mako/benchmarks/sto/masstree-beta/`
-- [x] Identify all pointer usage patterns
-- [x] Document existing memory management patterns
-- [x] List all classes with manual memory management
-- [x] Identify shared ownership patterns
+### 1.2 RustyCpp Infrastructure
+- [x] Ensure RustyCpp checker builds automatically (custom target now exports the required GCC include paths).
+- [x] Add an optional CMake target (`RUN_MASSTREE_BORROW_CHECK`) to invoke the checker; default build no longer fails when the checker reports issues.
+- [x] Add CI guard rails so missing checker binaries fail loudly.
+- [ ] Generate per-target `@unsafe` warnings for Masstree so reviews catch unsafe expansions.
 
-### 1.2 Set Up RustyCpp Infrastructure
+### 1.3 Safety Guidelines
+- [ ] Publish Masstree-specific guidelines describing when `@unsafe` is acceptable (RCU, raw node access, debug tooling).
+- [ ] Produce a reviewer checklist for `MasstreeValueHandle` changes (provenance, GC scheduling, null-handle semantics).
+- [ ] Align contracts with silo/sto and distributed owners for shared structs (`dbtuple`, `transaction`).
+- [ ] Document preferred Rusty safe-type substitutions (`rusty::Vec`, `rusty::Box`) and when STL usage in `@safe` code requires `@external` annotations.
 
-- [x] Enable borrow checking for Masstree in CMakeLists.txt
-- [x] Create test harness for incremental checking
-- [x] Set up CI/CD integration for borrow checking
-- [x] Document RustyCpp annotations needed
+---
 
-### 1.3 Establish Safety Guidelines
+## Phase 2: Value Ownership & GC
 
-- [x] Document when to use `unsafe`
-- [x] Create patterns for safe alternatives
-- [x] Define ownership transfer conventions
-- [x] Create code review checklist
+### 2.1 Handle Consolidation
+- [x] Provide a trivially copyable `MasstreeValueHandle` with typed accessors.
+- [x] Remove raw `value_ptr()` casts from transaction write paths in favour of handle accessors.
+- [x] Deprecate integer-only `make_value_handle` helpers and update tests accordingly.
+- [x] Introduce `MasstreePayload` RAII wrapper for inserts/removes and migrate kvdb wrappers.
+- [x] Ensure logical deletes rely on `has_value()` rather than raw pointers (`src/mako/txn_impl.h`).
 
-## Phase 2: Core Infrastructure (Week 2-3)
+### 2.2 RCU & Memory Reclamation
+- [x] Wrap `rcu::sync::alloc/dealloc/dealloc_rcu` in `@unsafe` shims with documented contracts (`src/mako/masstree/rcu_utils.hh`).
+- [x] Add debug-only provenance checks to track handle allocations.
+- [x] Extend `test/test_masstree.cc` to stress GC paths (tracked payloads released on failed inserts).
 
-### 2.1 Masstree Core (`src/mako/benchmarks/sto/masstree-beta/`)
+### 2.3 Node Mutation APIs
+- [x] Expose safe façade helpers (`insert_with_result`, `insert_if_absent_with_result`, `remove_with_result`) in `masstree_btree.h`.
+- [x] Audit call sites (kvdb, transaction code) to ensure `old_v` handles are checked before use.
+- [x] Harden `insert_info_t` so raw node pointers stay thread-local.
 
-Priority: **Critical** - Everything depends on these
+---
 
-#### Files to migrate:
+## Phase 3: Traversal & Scan Safety
+- [ ] Replace raw callback parameters in `low_level_search_range_callback` with lifetimed view objects.
+- [ ] Extend `test/test_masstree.cc` with concurrent scan coverage.
+- [ ] Wrap `tree_walk` and debug helpers so they no longer expose raw node pointers.
 
-- `masstree.hh`
-- `masstree_struct.hh`
-- `masstree_key.hh`
-- `masstree_tcursor.hh`
-- `masstree_split.hh`
-- `masstree_scan.hh`
-- `masstree_remove.hh`
-- `masstree_print.hh`
-- `masstree_insert.hh`
-- `masstree_get.hh`
-- `query_masstree.hh`
-- `query_masstree.cc`
+---
 
-#### Key challenges:
+## Phase 4: Transaction & Logging Integration
+- [x] Update `dbtuple::tuple_writer_t` to accept `MasstreeValueHandle` or typed payloads directly.
+- [ ] Refactor log-delta writers to remove remaining `const void*` plumbing.
+- [ ] Record null-handle semantics as the canonical deletion marker.
+- [ ] Annotate tuple-writer/logging hotspots with appropriate `@unsafe` markers until the interfaces are fully migrated.
+- [ ] Review exception/error paths in `base_txn_btree` to ensure handle propagation remains correct.
+- [ ] Audit transaction helpers marked `@safe` so they avoid undeclared legacy code and follow RustyCpp borrow rules.
 
-- Complex node structures with raw pointers
-- Manual memory management for nodes
-- Concurrent modifications and thread safety
-- Custom memory allocators
+---
 
-#### Proposed solutions:
+## Phase 5: Integration & Tooling
+- [x] Migrate legacy `src/mako/btree.cc` helpers to the safe façade (now routed through `insert_with_result` wrappers).
+- [x] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership, with GC tests backing the change.
+- [ ] Replace STL containers used in `@safe` benchmarks with Rusty alternatives or annotate them via `@external`.
+- [ ] Ensure `test_masstree` runs under ASan with borrow checking enabled in CI.
+- [ ] Capture throughput/latency baselines pre/post migration to watch for regressions.
+- [ ] Fail CI if `rusty-cpp-checker` reports new `@safe` → undeclared call violations.
 
-- (To be filled in after deeper code analysis)
+---
 
-## Phase 3: Build System Integration (Week 1-2)
+## Phase 6: Documentation & Knowledge Transfer
+- [ ] Publish a Masstree safety guide covering handles, RCU, and `@unsafe` conventions.
+- [ ] Record justifications for each remaining `@unsafe` block both inline and in docs.
+- [ ] Share weekly status updates with silo/distributed owners to flag interface changes early.
+- [ ] Provide a quick-reference matrix (based on RustyCpp README) mapping Masstree modules to required annotations and safe-type substitutions.
 
-### 3.1 CMake Integration
-
-- [x] Modify `CMakeLists.txt` to allow for selectively enabling/disabling `rusty-cpp` for the `masstree` component.
-- [x] Create a new CMake option, `MAKO_ENABLE_RUSTY_CPP_MASSTREE`, to control whether `rusty-cpp` is run on the `masstree` code.
-- [x] Update the `masstree_borrow_check` custom target to be conditional on the `MAKO_ENABLE_RUSTY_CPP_MASSTREE` option.
-- [x] Investigate the possibility of creating a separate static library for the `masstree` component to better isolate it from the rest of the `mako` codebase.
-
-### 3.2 Submodule Management
-
-- [x] Document the process for updating the `masstree` submodule and running the `rusty-cpp` checker on the updated code.
-- [x] Establish a branching strategy for the `masstree` submodule to manage the migration process.
-
-## Phase 4: Integration and Testing (Week 4-5)
-
-### 4.1 Integration Points
-
-- [x] Update generated code templates
-- [x] Fix service registration patterns
-- [x] Update benchmark code
-- [x] Migrate example code
-
-### 4.2 Testing Strategy
-
-- [x] Unit tests for each component
-- [x] Integration tests for RPC calls
-- [x] Stress tests for memory safety
-- [x] Performance regression tests
-
-## Phase 5: Advanced Features (Week 5-6)
-
-### 5.1 Optional Optimizations
-
-- [ ] Lock-free queues with safe interfaces
-- [ ] Memory pools with borrow checking
-- [ ] Zero-copy optimizations
-
-### 5.2 Documentation
-
-- [ ] Update Masstree guide
-- [ ] Create migration guide
-- [ ] Document unsafe blocks
-- [ ] Performance impact analysis
+---
 
 ## Implementation Strategy
+1. Harden ownership and GC semantics (Phase 2) before touching traversal and logging.
+2. Introduce safe façade layers so downstream code no longer sees raw pointers.
+3. Incrementally convert logging/tuple writers to handle-based APIs.
+4. Keep borrow checking enabled at every stage; extend test suites after each milestone.
 
-### Order of Attack
 
-1. **Start with Build System**: First, implement the CMake changes to control the `rusty-cpp` checking for `masstree`.
-2. **Incremental Migration**: One file at a time, starting with the core data structures and moving outwards.
-3. **Focus on Headers First**: Since `rusty-cpp` primarily works on header files, prioritize migrating the `.hh` files.
-4. **Maintain Compatibility**: Keep the API stable to avoid breaking the rest of the `mako` codebase.
-5. **Test Continuously**: Run the `test_masstree` and other relevant tests after each file migration.
 
-### Common Patterns to Apply
+## Open Risks
+1. **Traversal refactor** – Lifetimed callbacks are still unimplemented; risk of dangling references remains.
+2. **Tuple/logging pipeline** – Remaining `const void*` paths could undermine safety guarantees.
+3. **Documentation debt** – No published guide or review checklist yet; onboarding reviewers will be harder until addressed.
+4. **STL usage in @safe code** – Without `@external` annotations, the checker cannot enforce borrowing rules on standard containers.
 
-#### 1. Raw Pointer → Smart Pointer
+---
 
-```cpp
-// Before
-class Connection {
-    Request* pending_request_;
-
-    ~Connection() {
-        delete pending_request_;
-    }
-};
-
-// After
-class Connection {
-    std::unique_ptr<Request> pending_request_;
-    // Destructor not needed
-};
-```
-
-#### 2. Manual Ref Counting → shared_ptr
-
-```cpp
-// Before
-class RefCounted {
-    int ref_count_;
-    void add_ref();
-    void release();
-};
-
-// After
-using ObjectPtr = std::shared_ptr<Object>;
-```
-
-#### 3. C Arrays → std::vector/std::array
-
-```cpp
-// Before
-char buffer[1024];
-int* values = new int[size];
-
-// After
-std::array<char, 1024> buffer;
-std::vector<int> values(size);
-```
-
-#### 4. Unsafe Casts → Safe Alternatives
-
-```cpp
-// Before
-int* p = (int*)buffer;
-
-// After
-int value;
-std::memcpy(&value, buffer, sizeof(int));
-```
-
-### When to Use `unsafe`
-
-Acceptable uses of `unsafe`:
-
-1. **FFI Boundaries**: Interfacing with C libraries
-2. **Performance Critical**: Proven bottlenecks only
-3. **Lock-free Algorithms**: Where atomics are needed
-4. **Platform Code**: System calls, epoll, etc.
-
-Each `unsafe` block must have:
-
-- Comment explaining why it's needed
-- Proof of safety
-- Test coverage
-
-## Milestone Checkpoints
-
-#### Checkpoint 1 (End of Week 1)
-
-- [ ] All base types compile with borrow checking
-- [ ] No regressions in existing tests
-- [ ] Documentation updated
-
-#### Checkpoint 2 (End of Week 3)
+## Next Actions
+1. Draft Masstree-specific `@unsafe` guidelines and reviewer checklist.
+2. Implement lifetimed scan callbacks and guards (Phase 3).
+3. Start removing remaining `const void*` call sites in tuple writers/logging (Phase 4).
+4. Wrap up documentation deliverables and per-target checker enforcement (Phase 6 / Phase 5).
 
 - [ ] Marshal and reactor systems safe
 - [ ] RPC client can make safe calls

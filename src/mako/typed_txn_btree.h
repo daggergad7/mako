@@ -305,20 +305,24 @@ struct typed_txn_btree_ {
 
   template <uint64_t Fields>
   static inline size_t
-  tuple_writer(dbtuple::TupleWriterMode mode, const void *v, uint8_t *p, size_t sz)
+  tuple_writer(dbtuple::TupleWriterMode mode, MasstreeValueHandle value_handle, uint8_t *p, size_t sz)
   {
-    const value_type *vx = reinterpret_cast<const value_type *>(v);
+    const value_type *vx = value_handle.as_const<value_type>();
     switch (mode) {
     case dbtuple::TUPLE_WRITER_NEEDS_OLD_VALUE:
       return 1;
     case dbtuple::TUPLE_WRITER_COMPUTE_NEEDED:
+      INVARIANT(vx);
       return compute_needed_standalone(vx, Fields, p, sz);
     case dbtuple::TUPLE_WRITER_COMPUTE_DELTA_NEEDED:
+      INVARIANT(vx);
       return compute_needed_delta_standalone(vx, Fields);
     case dbtuple::TUPLE_WRITER_DO_WRITE:
+      INVARIANT(vx);
       do_write_standalone(vx, Fields, p, sz);
       return 0;
     case dbtuple::TUPLE_WRITER_DO_DELTA_WRITE:
+      INVARIANT(vx);
       do_delta_write_standalone(vx, Fields, p, sz);
       return 0;
     }

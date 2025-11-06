@@ -408,7 +408,7 @@ transaction<Protocol, Traits>::commit(bool doThrow)
           const dbtuple::write_record_ret ret =
             tuple->write_record_at(
                 cast(), commit_tid.second,
-                it->get_value_handle().void_ptr(), it->get_writer());
+                it->get_value_handle(), it->get_writer());
           bool unlock_head = false;
           if (unlikely(ret.head_ != tuple)) {
             // tuple was replaced by ret.head_
@@ -500,19 +500,19 @@ std::pair< dbtuple *, bool >
 transaction<Protocol, Traits>::try_insert_new_tuple(
     concurrent_btree &btr,
     const std::string *key,
-    const void *value,
+    MasstreeValueHandle value_handle,
     dbtuple::tuple_writer_t writer)
 {
   INVARIANT(key);
   const size_t sz =
-    value ? writer(dbtuple::TUPLE_WRITER_COMPUTE_NEEDED,
-      value, nullptr, 0) : 0;
+    value_handle ? writer(dbtuple::TUPLE_WRITER_COMPUTE_NEEDED,
+      value_handle, nullptr, 0) : 0;
 
   // perf: ~900 tsc/alloc on istc11.csail.mit.edu
   dbtuple * const tuple = dbtuple::alloc_first(sz, true);
-  if (value)
+  if (value_handle)
     writer(dbtuple::TUPLE_WRITER_DO_WRITE,
-        value, tuple->get_value_start(), 0);
+        value_handle, tuple->get_value_start(), 0);
   INVARIANT(find_read_set(tuple) == read_set.end());
   INVARIANT(tuple->is_latest());
   INVARIANT(tuple->version == dbtuple::MAX_TID);
@@ -541,9 +541,7 @@ transaction<Protocol, Traits>::try_insert_new_tuple(
   // update write_set
   // too expensive to be practical
   // INVARIANT(find_write_set(tuple) == write_set.end());
-  const MasstreeValueHandle handle =
-      value ? MasstreeValueHandle::from_ptr(value) : MasstreeValueHandle::null();
-  write_set.emplace_back(tuple, key, handle, writer, &btr, true);
+  write_set.emplace_back(tuple, key, value_handle, writer, &btr, true);
 
   // update node #s
   const auto* insert_node = insert_info.node();

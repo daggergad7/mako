@@ -329,6 +329,9 @@ void base_txn_btree<Transaction, P>::do_tree_put(
                                // for now [since this would indicate a suboptimality]
   t.ensure_active();
 
+  const MasstreeValueHandle value_handle =
+      v ? MasstreeValueHandle::from_ptr(v) : MasstreeValueHandle::null();
+
   if (unlikely(t.is_snapshot())) {
     const transaction_base::abort_reason r = transaction_base::ABORT_REASON_USER;
     t.abort_impl(r);
@@ -338,7 +341,7 @@ void base_txn_btree<Transaction, P>::do_tree_put(
   bool insert = false;
 retry:
   if (expect_new) {
-    auto ret = t.try_insert_new_tuple(this->underlying_btree, k, v, writer);
+    auto ret = t.try_insert_new_tuple(this->underlying_btree, k, value_handle, writer);
     INVARIANT(!ret.second || ret.first);
     if (unlikely(ret.second)) {
       const transaction_base::abort_reason r = transaction_base::ABORT_REASON_WRITE_NODE_INTERFERENCE;
@@ -364,9 +367,7 @@ retry:
   INVARIANT(px);
   if (!insert) {
     // add to write set normally, as non-insert
-    const MasstreeValueHandle handle =
-        v ? MasstreeValueHandle::from_ptr(v) : MasstreeValueHandle::null();
-    t.write_set.emplace_back(px, k, handle, writer, &this->underlying_btree, false);
+    t.write_set.emplace_back(px, k, value_handle, writer, &this->underlying_btree, false);
   } else {
     // should already exist in write set as insert
     // (because of try_insert_new_tuple())

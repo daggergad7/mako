@@ -22,6 +22,7 @@
 #include "small_unordered_map.h"
 #include "prefetch.h"
 #include "ownership_checker.h"
+#include "masstree/value_handle.hh"
 
 // debugging tool
 //#define TUPLE_LOCK_OWNERSHIP_CHECKING
@@ -838,7 +839,7 @@ public:
     TUPLE_WRITER_DO_WRITE,
     TUPLE_WRITER_DO_DELTA_WRITE,
   };
-  typedef size_t (*tuple_writer_t)(TupleWriterMode, const void *, uint8_t *, size_t);
+  typedef size_t (*tuple_writer_t)(TupleWriterMode, MasstreeValueHandle, uint8_t *, size_t);
 
   /**
    * Always writes the record in the latest (newest) version slot,
@@ -853,7 +854,7 @@ public:
   template <typename Transaction>
   write_record_ret
   write_record_at(const Transaction *txn, tid_t t,
-                  const void *v, tuple_writer_t writer)
+                  MasstreeValueHandle value_handle, tuple_writer_t writer)
   {
 #ifndef DISABLE_OVERWRITE_IN_PLACE
     CheckMagic();
@@ -863,8 +864,8 @@ public:
     INVARIANT(is_write_intent());
 
     const size_t new_sz =
-      v ? writer(TUPLE_WRITER_COMPUTE_NEEDED, v, get_value_start(), size) : 0;
-    INVARIANT(!v || new_sz);
+      value_handle ? writer(TUPLE_WRITER_COMPUTE_NEEDED, value_handle, get_value_start(), size) : 0;
+    INVARIANT(!value_handle || new_sz);
     INVARIANT(is_deleting() || size);
     const size_t old_sz = is_deleting() ? 0 : size;
 
@@ -878,8 +879,8 @@ public:
       if (likely(new_sz <= alloc_size)) {
         // directly update in place
         mark_modifying();
-        if (v)
-          writer(TUPLE_WRITER_DO_WRITE, v, get_value_start(), old_sz);
+        if (value_handle)
+          writer(TUPLE_WRITER_DO_WRITE, value_handle, get_value_start(), old_sz);
         version = t;
         size = new_sz;
         if (!new_sz)
@@ -900,13 +901,13 @@ public:
       // the returned tuple in the ctor, as an optimization
 
       const bool needs_old_value =
-        writer(TUPLE_WRITER_NEEDS_OLD_VALUE, nullptr, nullptr, 0);
+        writer(TUPLE_WRITER_NEEDS_OLD_VALUE, MasstreeValueHandle::null(), nullptr, 0);
       INVARIANT(new_sz);
-      INVARIANT(v);
+      INVARIANT(value_handle);
       dbtuple * const rep =
         alloc_spill(t, get_value_start(), old_sz, new_sz,
                     this, true, needs_old_value);
-      writer(TUPLE_WRITER_DO_WRITE, v, rep->get_value_start(), old_sz);
+      writer(TUPLE_WRITER_DO_WRITE, value_handle, rep->get_value_start(), old_sz);
       INVARIANT(rep->is_latest());
       INVARIANT(rep->size == new_sz);
       clear_latest();
@@ -932,8 +933,8 @@ public:
       INVARIANT(!spill->is_latest());
       mark_modifying();
       set_next(spill);
-      if (v)
-        writer(TUPLE_WRITER_DO_WRITE, v, get_value_start(), size);
+      if (value_handle)
+        writer(TUPLE_WRITER_DO_WRITE, value_handle, get_value_start(), size);
       version = t;
       size = new_sz;
       if (!new_sz)
@@ -942,12 +943,12 @@ public:
     }
 
     const bool needs_old_value =
-      writer(TUPLE_WRITER_NEEDS_OLD_VALUE, nullptr, nullptr, 0);
+      writer(TUPLE_WRITER_NEEDS_OLD_VALUE, MasstreeValueHandle::null(), nullptr, 0);
     dbtuple * const rep =
       alloc_spill(t, get_value_start(), old_sz, new_sz,
                   this, true, needs_old_value);
-    if (v)
-      writer(TUPLE_WRITER_DO_WRITE, v, rep->get_value_start(), size);
+    if (value_handle)
+      writer(TUPLE_WRITER_DO_WRITE, value_handle, rep->get_value_start(), size);
     INVARIANT(rep->is_latest());
     INVARIANT(rep->size == new_sz);
     INVARIANT(new_sz || rep->is_deleting()); // set by alloc_spill()
@@ -962,8 +963,8 @@ public:
     INVARIANT(is_write_intent());
 
     const size_t new_sz =
-      v ? writer(TUPLE_WRITER_COMPUTE_NEEDED, v, get_value_start(), size) : 0;
-    INVARIANT(!v || new_sz);
+      value_handle ? writer(TUPLE_WRITER_COMPUTE_NEEDED, value_handle, get_value_start(), size) : 0;
+    INVARIANT(!value_handle || new_sz);
     INVARIANT(is_deleting() || size);
     const size_t old_sz = is_deleting() ? 0 : size;
 
@@ -971,12 +972,12 @@ public:
       ++g_evt_dbtuple_logical_deletes;
 
     const bool needs_old_value =
-      writer(TUPLE_WRITER_NEEDS_OLD_VALUE, nullptr, nullptr, 0);
+      writer(TUPLE_WRITER_NEEDS_OLD_VALUE, MasstreeValueHandle::null(), nullptr, 0);
     dbtuple * const rep =
       alloc_spill(t, get_value_start(), old_sz, new_sz,
                   this, true, needs_old_value);
-    if (v)
-      writer(TUPLE_WRITER_DO_WRITE, v, rep->get_value_start(), size);
+    if (value_handle)
+      writer(TUPLE_WRITER_DO_WRITE, value_handle, rep->get_value_start(), size);
     INVARIANT(rep->is_latest());
     INVARIANT(rep->size == new_sz);
     INVARIANT(new_sz || rep->is_deleting()); // set by alloc_spill()

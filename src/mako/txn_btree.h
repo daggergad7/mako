@@ -154,17 +154,19 @@ struct txn_btree_ {
   };
 
   static size_t
-  tuple_writer(dbtuple::TupleWriterMode mode, const void *v, uint8_t *p, size_t sz)
+  tuple_writer(dbtuple::TupleWriterMode mode, MasstreeValueHandle value_handle, uint8_t *p, size_t sz)
   {
-    const std::string * const vx = reinterpret_cast<const std::string *>(v);
+    const std::string * const vx = value_handle.as_const<std::string>();
     switch (mode) {
     case dbtuple::TUPLE_WRITER_NEEDS_OLD_VALUE:
       return 0;
     case dbtuple::TUPLE_WRITER_COMPUTE_NEEDED:
     case dbtuple::TUPLE_WRITER_COMPUTE_DELTA_NEEDED:
+      INVARIANT(vx);
       return vx->size();
     case dbtuple::TUPLE_WRITER_DO_WRITE:
     case dbtuple::TUPLE_WRITER_DO_DELTA_WRITE:
+      INVARIANT(vx);
       NDB_MEMCPY(p, vx->data(), vx->size());
       return 0;
     }
