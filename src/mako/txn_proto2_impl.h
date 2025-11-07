@@ -783,6 +783,9 @@ public:
     return true;
   }
 
+  // @unsafe
+  // SAFETY: Writes directly into per-core WAL buffers and manages compression queues
+  // without borrow-check visibility; relies on txn_logger invariants and WAL tests.
   inline void
   on_tid_finish(tid_t commit_tid)
   {
@@ -899,6 +902,9 @@ public:
 private:
 
   // assumes enough space in px to hold this txn
+  // @unsafe
+  // SAFETY: Serializes arbitrary payload bytes into raw WAL buffers; caller guarantees
+  // exclusive ownership of `px` and validated `value_sizes`. Guarded by txn_logger tests.
   inline uint64_t
   write_current_txn_into_buffer(
       txn_logger::pbuffer *px,

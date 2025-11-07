@@ -851,6 +851,9 @@ public:
    *
    * Note: if this != ret.first, then we need a tree replacement
    */
+  // @unsafe
+  // SAFETY: Mutates in-place tuple storage using raw pointers and assumes the caller
+  // holds the tuple lock plus a valid Masstree RC epoch. Covered by commit/write GC tests.
   template <typename Transaction>
   write_record_ret
   write_record_at(const Transaction *txn, tid_t t,

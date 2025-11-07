@@ -53,8 +53,8 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 - [x] Update `dbtuple::tuple_writer_t` to accept `MasstreeValueHandle` or typed payloads directly.
 - [x] Refactor log-delta writers to remove remaining `const void*` plumbing.
 - [x] Record null-handle semantics as the canonical deletion marker.
-- [ ] Annotate tuple-writer/logging hotspots with appropriate `@unsafe` markers until the interfaces are fully migrated.
-- [ ] Audit transaction helpers marked `@safe` so they avoid undeclared legacy code and follow RustyCpp borrow rules.
+- [x] Annotate tuple-writer/logging hotspots with appropriate `@unsafe` markers until the interfaces are fully migrated.
+- [x] Audit transaction helpers marked `@safe` so they avoid undeclared legacy code and follow RustyCpp borrow rules.
 
 ---
 

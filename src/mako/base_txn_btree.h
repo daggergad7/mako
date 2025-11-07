@@ -194,6 +194,9 @@ protected:
   // as value.
   //
   // NOTE: both key and value are expected to be stable values already
+  // @unsafe
+  // SAFETY: Directly manipulates dbtuple pointers/locks while relying on Masstree epochs;
+  // helpers and GC tests ensure the call pattern is valid.
   template <typename Traits>
   void do_tree_put(Transaction<Traits> &t,
                    const std::string *k,
