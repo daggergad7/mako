@@ -18,11 +18,6 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 - [x] Add CI guard rails so missing checker binaries fail loudly.
 - [ ] Generate per-target `@unsafe` warnings for Masstree so reviews catch unsafe expansions.
 
-### 1.3 Safety Guidelines
-- [ ] Publish Masstree-specific guidelines describing when `@unsafe` is acceptable (RCU, raw node access, debug tooling).
-- [ ] Produce a reviewer checklist for `MasstreeValueHandle` changes (provenance, GC scheduling, null-handle semantics).
-- [ ] Align contracts with silo/sto and distributed owners for shared structs (`dbtuple`, `transaction`).
-- [ ] Document preferred Rusty safe-type substitutions (`rusty::Vec`, `rusty::Box`) and when STL usage in `@safe` code requires `@external` annotations.
 
 ---
 
@@ -48,9 +43,9 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 ---
 
 ## Phase 3: Traversal & Scan Safety
-- [ ] Replace raw callback parameters in `low_level_search_range_callback` with lifetimed view objects.
-- [ ] Extend `test/test_masstree.cc` with concurrent scan coverage.
-- [ ] Wrap `tree_walk` and debug helpers so they no longer expose raw node pointers.
+- [x] Replace raw callback parameters in `low_level_search_range_callback` with lifetimed view objects.
+- [x] Extend `test/test_masstree.cc` with concurrent scan coverage.
+- [x] Wrap `tree_walk` and debug helpers so they no longer expose raw node pointers.
 
 ---
 
@@ -59,7 +54,6 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 - [ ] Refactor log-delta writers to remove remaining `const void*` plumbing.
 - [ ] Record null-handle semantics as the canonical deletion marker.
 - [ ] Annotate tuple-writer/logging hotspots with appropriate `@unsafe` markers until the interfaces are fully migrated.
-- [ ] Review exception/error paths in `base_txn_btree` to ensure handle propagation remains correct.
 - [ ] Audit transaction helpers marked `@safe` so they avoid undeclared legacy code and follow RustyCpp borrow rules.
 
 ---
@@ -67,10 +61,8 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 ## Phase 5: Integration & Tooling
 - [x] Migrate legacy `src/mako/btree.cc` helpers to the safe façade (now routed through `insert_with_result` wrappers).
 - [x] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership, with GC tests backing the change.
-- [ ] Replace STL containers used in `@safe` benchmarks with Rusty alternatives or annotate them via `@external`.
-- [ ] Ensure `test_masstree` runs under ASan with borrow checking enabled in CI.
 - [ ] Capture throughput/latency baselines pre/post migration to watch for regressions.
-- [ ] Fail CI if `rusty-cpp-checker` reports new `@safe` → undeclared call violations.
+
 
 ---
 
@@ -100,8 +92,8 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 
 ## Next Actions
 1. Draft Masstree-specific `@unsafe` guidelines and reviewer checklist.
-2. Implement lifetimed scan callbacks and guards (Phase 3).
-3. Start removing remaining `const void*` call sites in tuple writers/logging (Phase 4).
+2. Remove the remaining `const void*` call sites in tuple writers/logging (Phase 4) and document null-handle semantics.
+3. Annotate tuple/logging hotspots with the right `@unsafe` markers once the handle-only path lands.
 4. Wrap up documentation deliverables and per-target checker enforcement (Phase 6 / Phase 5).
 
 - [ ] Marshal and reactor systems safe

@@ -482,6 +482,7 @@ kvdb_ordered_index<UseConcurrencyControl>::size() const
 
 template <typename Btree, bool UseConcurrencyControl>
 struct purge_tree_walker : public Btree::tree_walk_callback {
+  using node_view = typename Btree::tree_walk_callback::node_view;
   typedef basic_kvdb_record<UseConcurrencyControl> kvdb_record;
 
 #ifdef TXN_BTREE_DUMP_PURGE_STATS
@@ -520,10 +521,10 @@ struct purge_tree_walker : public Btree::tree_walk_callback {
 #endif
 
   virtual void
-  on_node_begin(const typename Btree::node_opaque_t *n)
+  on_node_begin(node_view &view)
   {
     INVARIANT(spec_values.empty());
-    spec_values = Btree::ExtractValues(n);
+    spec_values = view.snapshot_values();
   }
 
   virtual void

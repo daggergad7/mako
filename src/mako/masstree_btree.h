@@ -367,21 +367,74 @@ public:
    *
    * The order of calling on_resp_node() and invoke() is up to the implementation.
    */
-  class low_level_search_range_callback {
+class low_level_search_range_callback {
+public:
+  virtual ~low_level_search_range_callback() {}
+
+  class scan_view_guard;
+  class scan_view {
   public:
-    virtual ~low_level_search_range_callback() {}
+    scan_view(const string_type &key,
+              value_type value,
+              const node_opaque_t *node,
+              uint64_t version)
+      : key_storage_(key.data(), key.length()),
+        value_(value),
+        node_(node),
+        version_(version),
+        valid_(true) {}
 
-    /**
-     * This node lies within the search range (at version v)
-     */
-    virtual void on_resp_node(const node_opaque_t *n, uint64_t version) = 0;
+    scan_view(const scan_view&) = delete;
+    scan_view& operator=(const scan_view&) = delete;
+    scan_view(scan_view&&) = delete;
+    scan_view& operator=(scan_view&&) = delete;
 
-    /**
-     * This key/value pair was read from node n @ version
-     */
-    virtual bool invoke(const string_type &k, value_type v,
-                        const node_opaque_t *n, uint64_t version) = 0;
+    string_type key() const {
+      INVARIANT(valid_);
+      return string_type(key_storage_.data(), key_storage_.size());
+    }
+
+    value_type value() const {
+      INVARIANT(valid_);
+      return value_;
+    }
+
+    const node_opaque_t* node() const {
+      return node_;
+    }
+
+    uint64_t version() const {
+      return version_;
+    }
+
+    bool valid() const {
+      return valid_;
+    }
+
+  private:
+    friend class scan_view_guard;
+    void invalidate() { valid_ = false; }
+
+    std::string key_storage_;
+    value_type value_;
+    const node_opaque_t *node_;
+    uint64_t version_;
+    bool valid_;
   };
+
+  class scan_view_guard {
+  public:
+    explicit scan_view_guard(scan_view &view) : view_(view) {}
+    scan_view_guard(const scan_view_guard&) = delete;
+    scan_view_guard& operator=(const scan_view_guard&) = delete;
+    ~scan_view_guard() { view_.invalidate(); }
+  private:
+    scan_view &view_;
+  };
+
+  virtual void on_resp_node(const node_opaque_t *n, uint64_t version) = 0;
+  virtual bool invoke(scan_view &view) = 0;
+};
 
   /**
    * For all keys in [lower, *upper), invoke callback in ascending order.
@@ -441,19 +494,20 @@ public:
 
   class search_range_callback : public low_level_search_range_callback {
   public:
+    using scan_view = typename low_level_search_range_callback::scan_view;
+
     virtual void
     on_resp_node(const node_opaque_t *n, uint64_t version)
     {
     }
 
-    virtual bool
-    invoke(const string_type &k, value_type v,
-           const node_opaque_t *n, uint64_t version)
-    {
-      return invoke(k, v);
-    }
-
     virtual bool invoke(const string_type &k, value_type v) = 0;
+
+  private:
+    bool invoke(scan_view &view) OVERRIDE
+    {
+      return invoke(view.key(), view.value());
+    }
   };
 
   /**
@@ -525,8 +579,9 @@ public:
    * btree.
    *
    * The way it works is that, on_node_begin() is first called. In
-   * on_node_begin(), a callback function should read (but not modify) the
-   * values it is interested in, and save them.
+   * on_node_begin(), a callback function receives a scoped `node_view`
+   * wrapper, should read (but not modify) the values it is interested in, and
+   * save them before the view is invalidated.
    *
    * Then, either one of on_node_success() or on_node_failure() is called. If
    * on_node_success() is called, then the previous values read in
@@ -535,8 +590,54 @@ public:
    */
   class tree_walk_callback {
   public:
+    class node_view_guard;
+    class node_view {
+    public:
+      using value_snapshot = std::vector<std::pair<value_type, bool>>;
+      using version_value_type = typename nodeversion_type::value_type;
+
+      node_view(const node_opaque_t *node, version_value_type version)
+        : node_(node), version_(version), valid_(true) {}
+
+      node_view(const node_view&) = delete;
+      node_view& operator=(const node_view&) = delete;
+
+      version_value_type version() const {
+        INVARIANT(valid_);
+        return version_;
+      }
+
+      value_snapshot snapshot_values() const {
+        INVARIANT(valid_);
+        return ExtractValues(node_);
+      }
+
+      std::string debug_string() const {
+        INVARIANT(valid_);
+        return NodeStringify(node_);
+      }
+
+    private:
+      friend class node_view_guard;
+      void invalidate() { valid_ = false; }
+
+      const node_opaque_t *node_;
+      version_value_type version_;
+      bool valid_;
+    };
+
+    class node_view_guard {
+    public:
+      explicit node_view_guard(node_view &view) : view_(view) {}
+      node_view_guard(const node_view_guard&) = delete;
+      node_view_guard& operator=(const node_view_guard&) = delete;
+      ~node_view_guard() { view_.invalidate(); }
+    private:
+      node_view &view_;
+    };
+
     virtual ~tree_walk_callback() {}
-    virtual void on_node_begin(const node_opaque_t *n) = 0;
+    virtual void on_node_begin(node_view &view) = 0;
     virtual void on_node_success() = 0;
     virtual void on_node_failure() = 0;
   };
@@ -619,24 +720,31 @@ void mbtree<P>::tree_walk(tree_walk_callback &callback) const {
     INVARIANT(leaf);
     while (leaf) {
       leaf->prefetch();
-    process:
-      auto version = leaf->stable();
-      auto perm = leaf->permutation();
-      for (int i = 0; i != perm.size(); ++i)
-        if (leaf->is_layer(perm[i]))
-          layers.push_back(leaf->lv_[perm[i]].layer());
-      leaf_type *next = leaf->safe_next();
-      callback.on_node_begin(leaf);
-      if (unlikely(leaf->has_changed(version))) {
-        callback.on_node_failure();
-        layers.clear();
-        goto process;
-      }
-      callback.on_node_success();
-      leaf = next;
-      if (!layers.empty()) {
-        q.insert(q.end(), layers.begin(), layers.end());
-        layers.clear();
+      while (true) {
+        auto version = leaf->stable();
+        auto perm = leaf->permutation();
+        for (int i = 0; i != perm.size(); ++i)
+          if (leaf->is_layer(perm[i]))
+            layers.push_back(leaf->lv_[perm[i]].layer());
+        leaf_type *next = leaf->safe_next();
+        typename tree_walk_callback::node_view view(
+            static_cast<const node_opaque_t *>(leaf),
+            static_cast<typename tree_walk_callback::node_view::version_value_type>(
+                version.version_value()));
+        typename tree_walk_callback::node_view_guard guard(view);
+        callback.on_node_begin(view);
+        if (unlikely(leaf->has_changed(version))) {
+          callback.on_node_failure();
+          layers.clear();
+          continue;
+        }
+        callback.on_node_success();
+        leaf = next;
+        if (!layers.empty()) {
+          q.insert(q.end(), layers.begin(), layers.end());
+          layers.clear();
+        }
+        break;
       }
     }
   }
@@ -648,7 +756,7 @@ class mbtree<P>::size_walk_callback : public tree_walk_callback {
   size_walk_callback()
     : size_(0) {
   }
-  virtual void on_node_begin(const node_opaque_t *n);
+  virtual void on_node_begin(typename tree_walk_callback::node_view &view);
   virtual void on_node_success();
   virtual void on_node_failure();
   size_t size_;
@@ -657,13 +765,10 @@ class mbtree<P>::size_walk_callback : public tree_walk_callback {
 
 template <typename P>
 void
-mbtree<P>::size_walk_callback::on_node_begin(const node_opaque_t *n)
+mbtree<P>::size_walk_callback::on_node_begin(
+    typename tree_walk_callback::node_view &view)
 {
-  auto perm = n->permutation();
-  node_size_ = 0;
-  for (int i = 0; i != perm.size(); ++i)
-    if (!n->is_layer(perm[i]))
-      ++node_size_;
+  node_size_ = view.snapshot_values().size();
 }
 
 template <typename P>
@@ -873,7 +978,10 @@ class mbtree<P>::low_level_search_range_scanner
           ( Reverse && bs >= key.full_string()))
         return false;
     }
-    return callback_.invoke(key.full_string(), value, this->n_, this->v_);
+    typename low_level_search_range_callback::scan_view view(
+        key.full_string(), value, this->n_, this->v_);
+    typename low_level_search_range_callback::scan_view_guard guard(view);
+    return callback_.invoke(view);
   }
  private:
   Masstree::leaf<P>* n_;
@@ -886,15 +994,16 @@ template <typename F>
 class mbtree<P>::low_level_search_range_callback_wrapper :
   public mbtree<P>::low_level_search_range_callback {
 public:
+  using scan_view = typename low_level_search_range_callback::scan_view;
+
   low_level_search_range_callback_wrapper(F& callback) : callback_(callback) {}
 
   void on_resp_node(const node_opaque_t *n, uint64_t version) OVERRIDE {}
 
   bool
-  invoke(const string_type &k, value_type v,
-         const node_opaque_t *n, uint64_t version) OVERRIDE
+  invoke(scan_view &view) OVERRIDE
   {
-    return callback_(k, v);
+    return callback_(view.key(), view.value());
   }
 
  private:

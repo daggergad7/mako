@@ -79,7 +79,8 @@ public:
 private:
 
   struct purge_tree_walker : public concurrent_btree::tree_walk_callback {
-    virtual void on_node_begin(const typename concurrent_btree::node_opaque_t *n);
+    using node_view = typename concurrent_btree::tree_walk_callback::node_view;
+    virtual void on_node_begin(node_view &view);
     virtual void on_node_success();
     virtual void on_node_failure();
 #ifdef TXN_BTREE_DUMP_PURGE_STATS
@@ -150,9 +151,10 @@ protected:
       : t(t), caller_callback(caller_callback),
         key_reader(key_reader), value_reader(value_reader) {}
 
+    typedef typename concurrent_btree::low_level_search_range_callback::scan_view scan_view;
+
     virtual void on_resp_node(const typename concurrent_btree::node_opaque_t *n, uint64_t version);
-    virtual bool invoke(const typename concurrent_btree::string_type &k, typename concurrent_btree::value_type v,
-                        const typename concurrent_btree::node_opaque_t *n, uint64_t version);
+    virtual bool invoke(scan_view &view);
 
   private:
     Transaction<Traits> *const t;
@@ -259,10 +261,10 @@ base_txn_btree<Transaction, P>::unsafe_purge(bool dump_stats)
 
 template <template <typename> class Transaction, typename P>
 void
-base_txn_btree<Transaction, P>::purge_tree_walker::on_node_begin(const typename concurrent_btree::node_opaque_t *n)
+base_txn_btree<Transaction, P>::purge_tree_walker::on_node_begin(node_view &view)
 {
   INVARIANT(spec_values.empty());
-  spec_values = concurrent_btree::ExtractValues(n);
+  spec_values = view.snapshot_values();
 }
 
 template <template <typename> class Transaction, typename P>
@@ -399,18 +401,16 @@ template <typename Traits, typename Callback,
 bool
 base_txn_btree<Transaction, P>
   ::txn_search_range_callback<Traits, Callback, KeyReader, ValueReader>
-  ::invoke(
-    const typename concurrent_btree::string_type &k, typename concurrent_btree::value_type v,
-    const typename concurrent_btree::node_opaque_t *n, uint64_t version)
+  ::invoke(scan_view &view)
 {
   t->ensure_active();
-  VERBOSE(std::cerr << "search range k: " << util::hexify(k) << " from <node=0x" << util::hexify(n)
-                    << ", version=" << version << ">" << std::endl
-                    << "  " << *(v.as<dbtuple>()) << std::endl);
-  const dbtuple * const tuple = v.as<const dbtuple>();
+  VERBOSE(std::cerr << "search range k: " << util::hexify(view.key()) << " from <node=0x" << util::hexify(view.node())
+                    << ", version=" << view.version() << ">" << std::endl
+                    << "  " << *(view.value().as<dbtuple>()) << std::endl);
+  const dbtuple * const tuple = view.value().as<const dbtuple>();
   if (t->do_tuple_read(tuple, *value_reader))
     return caller_callback->invoke(
-        (*key_reader)(k), value_reader->results());
+        (*key_reader)(view.key()), value_reader->results());
   return true;
 }
 

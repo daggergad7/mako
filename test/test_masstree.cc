@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <thread>
 
 #include "mako/masstree_btree.h"
 #include "mako/masstree/payload.hh"
@@ -490,8 +491,9 @@ TEST_F(MasstreeBTreeTest, LowLevelSearchRangeCallbackVisitsNodes) {
             nodes.push_back(n);
         }
 
-        bool invoke(const StringType& key, ValueType value,
-                    const Tree::node_opaque_t*, uint64_t) override {
+        bool invoke(Tree::low_level_search_range_callback::scan_view& view) override {
+            auto key = view.key();
+            auto value = view.value();
             keys.push_back(DecodeKey(key));
             EXPECT_EQ(700U + keys.back(), DecodeValue(value));
             return true;
@@ -504,6 +506,37 @@ TEST_F(MasstreeBTreeTest, LowLevelSearchRangeCallbackVisitsNodes) {
 
     EXPECT_FALSE(cb.nodes.empty());
     EXPECT_EQ(std::vector<uint64_t>({2, 3, 4, 5}), cb.keys);
+}
+
+TEST_F(MasstreeBTreeTest, ConcurrentRangeScanSurvivesConcurrentMutations) {
+    for (uint64_t i = 0; i < 32; ++i) {
+        EXPECT_TRUE(tree_.insert(u64_varkey(i), storeValue(900 + i)));
+    }
+
+    std::atomic<bool> running{true};
+    std::thread writer([&]() {
+        uint64_t value = 1000;
+        while (running.load(std::memory_order_relaxed)) {
+            tree_.insert(u64_varkey(value), storeValue(value));
+            ++value;
+        }
+    });
+
+    struct CountingCallback : public Tree::search_range_callback {
+        std::atomic<size_t> hits{0};
+        bool invoke(const StringType&, ValueType) override {
+            hits.fetch_add(1, std::memory_order_relaxed);
+            return true;
+        }
+    } callback;
+
+    for (int i = 0; i < 25; ++i) {
+        tree_.search_range_call(u64_varkey(0), nullptr, callback);
+    }
+
+    running.store(false, std::memory_order_relaxed);
+    writer.join();
+    EXPECT_GT(callback.hits.load(), 0U);
 }
 
 // After deleting a key, the leaf dump should omit the removed payload.
