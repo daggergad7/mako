@@ -51,7 +51,7 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 
 ## Phase 4: Transaction & Logging Integration
 - [x] Update `dbtuple::tuple_writer_t` to accept `MasstreeValueHandle` or typed payloads directly.
-- [ ] Refactor log-delta writers to remove remaining `const void*` plumbing.
+- [x] Refactor log-delta writers to remove remaining `const void*` plumbing.
 - [ ] Record null-handle semantics as the canonical deletion marker.
 - [ ] Annotate tuple-writer/logging hotspots with appropriate `@unsafe` markers until the interfaces are fully migrated.
 - [ ] Audit transaction helpers marked `@safe` so they avoid undeclared legacy code and follow RustyCpp borrow rules.
@@ -84,7 +84,7 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 
 ## Open Risks
 1. **Traversal refactor** – Lifetimed callbacks are still unimplemented; risk of dangling references remains.
-2. **Tuple/logging pipeline** – Remaining `const void*` paths could undermine safety guarantees.
+2. **Tuple/logging pipeline** – Null-handle semantics and `@unsafe` annotations are still undocumented, so reviewers can miss ownership regressions.
 3. **Documentation debt** – No published guide or review checklist yet; onboarding reviewers will be harder until addressed.
 4. **STL usage in @safe code** – Without `@external` annotations, the checker cannot enforce borrowing rules on standard containers.
 
@@ -92,8 +92,8 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 
 ## Next Actions
 1. Draft Masstree-specific `@unsafe` guidelines and reviewer checklist.
-2. Remove the remaining `const void*` call sites in tuple writers/logging (Phase 4) and document null-handle semantics.
-3. Annotate tuple/logging hotspots with the right `@unsafe` markers once the handle-only path lands.
+2. Document null-handle semantics and annotate tuple/logging hotspots with the right `@unsafe` markers.
+3. Remove the remaining legacy helpers that are marked `@safe` but still transitively call undeclared code.
 4. Wrap up documentation deliverables and per-target checker enforcement (Phase 6 / Phase 5).
 
 - [ ] Marshal and reactor systems safe

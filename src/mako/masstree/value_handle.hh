@@ -43,14 +43,6 @@ struct MasstreeValueHandle {
         return reinterpret_cast<uint8_t*>(bits);
     }
 
-    [[nodiscard]] inline void* void_ptr() noexcept {
-        return reinterpret_cast<void*>(bits);
-    }
-
-    [[nodiscard]] inline const void* void_ptr() const noexcept {
-        return reinterpret_cast<const void*>(bits);
-    }
-
     template <typename T>
     [[nodiscard]] inline T* as() const noexcept {
         return reinterpret_cast<T*>(bits);

@@ -386,7 +386,7 @@ operator<<(
 {
   o << "[tuple=" << r.get_tuple()
     << ", key=" << util::hexify(r.get_key())
-    << ", value=" << util::hexify(r.get_value_handle().void_ptr())
+    << ", value_handle_bits=0x" << util::hexify(r.get_value_handle().bits)
     << ", insert=" << r.is_insert()
     << ", do_write=" << r.do_write()
     << ", btree=" << r.get_btree()
