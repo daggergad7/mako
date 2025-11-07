@@ -816,7 +816,9 @@ public:
       space_needed += vs_uint32_t.nbytes(&k_nbytes);
       space_needed += k_nbytes;
 
-      const uint32_t v_nbytes = rec.has_value() ?
+      // Null value handles mark logical deletes; no payload bytes are emitted.
+      const bool has_payload = !rec.is_logical_delete();
+      const uint32_t v_nbytes = has_payload ?
           rec.get_writer()(
               dbtuple::TUPLE_WRITER_COMPUTE_DELTA_NEEDED,
               rec.get_value_handle(), nullptr, 0) : 0;
@@ -933,8 +935,10 @@ private:
       NDB_MEMCPY(p, rec.get_key().data(), k_nbytes);
       p += k_nbytes;
       const uint32_t v_nbytes = value_sizes[idx];
+      const bool has_payload = !rec.is_logical_delete();
+      INVARIANT((v_nbytes == 0) == !has_payload);
       p = vs_uint32_t.write(p, v_nbytes);
-      if (v_nbytes) {
+      if (has_payload) {
         rec.get_writer()(dbtuple::TUPLE_WRITER_DO_DELTA_WRITE, rec.get_value_handle(), p, v_nbytes);
         p += v_nbytes;
       }

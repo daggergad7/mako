@@ -262,6 +262,12 @@ protected:
     {
       return static_cast<bool>(value);
     }
+    inline bool
+    is_logical_delete() const
+    {
+      // Canonical deletion marker: absence of payload is represented by a null handle.
+      return value.is_null();
+    }
     inline dbtuple::tuple_writer_t
     get_writer() const
     {
