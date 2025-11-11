@@ -16,7 +16,6 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 - [x] Ensure RustyCpp checker builds automatically (custom target now exports the required GCC include paths).
 - [x] Add an optional CMake target (`RUN_MASSTREE_BORROW_CHECK`) to invoke the checker; default build no longer fails when the checker reports issues.
 - [x] Add CI guard rails so missing checker binaries fail loudly.
-- [ ] Generate per-target `@unsafe` warnings for Masstree so reviews catch unsafe expansions.
 
 
 ---
@@ -61,7 +60,8 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 ## Phase 5: Integration & Tooling
 - [x] Migrate legacy `src/mako/btree.cc` helpers to the safe façade (now routed through `insert_with_result` wrappers).
 - [x] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership, with GC tests backing the change.
-- [ ] Capture throughput/latency baselines pre/post migration to watch for regressions.
+- [x] Capture throughput/latency baselines pre/post migration to watch for regressions.
+- [x] Add `MasstreePerformance` gtests that log bulk insert/lookup throughput for before/after comparisons.
 
 
 ---
@@ -126,7 +126,7 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 ### Primary Goals
 
 - [ ] 100% of Masstree files pass borrow checking
-- [ ] < 5% performance impact
+- [ ] < 5% performance impact (`scripts/check_masstree_baseline_regression.py`)
 - [ ] No API breaking changes
 - [ ] Zero memory leaks in tests
 

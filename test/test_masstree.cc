@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <atomic>
+#include <cstdlib>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -12,6 +14,10 @@
 #include <utility>
 #include <vector>
 #include <thread>
+
+#include "rrr/base/basetypes.hpp"
+
+#include "test/test-helper.h"
 
 #include "mako/masstree_btree.h"
 #include "mako/masstree/payload.hh"
@@ -65,6 +71,13 @@ uint64_t DecodeKey(const StringType& str) {
     return out;
 }
 
+} // namespace
+
+namespace {
+bool ShouldRunPerfTests() {
+    const char *flag = std::getenv("MASSTREE_PERF_TESTS");
+    return flag && std::string(flag) == "1";
+}
 } // namespace
 
 class MasstreeBTreeTest : public ::testing::Test {
@@ -134,7 +147,7 @@ protected:
     }
 
     Tree tree_;
-    std::vector<std::unique_ptr<uint64_t>> values_;
+    std::deque<std::unique_ptr<uint64_t>> values_;
 };
 
 TEST_F(MasstreeBTreeTest, InsertAndSearchSingleKey) {
@@ -556,4 +569,77 @@ TEST_F(MasstreeBTreeTest, ExtractValuesRespectsRemovals) {
     for (const auto& [ptr, _] : entries) {
         EXPECT_NE(DecodeValue(ptr), 804U);
     }
+}
+
+class MasstreePerformanceTest : public MasstreeBTreeTest {
+protected:
+    struct PerfStats {
+        size_t operations;
+        double seconds;
+        double qps() const {
+            return seconds > 0.0 ? static_cast<double>(operations) / seconds : 0.0;
+        }
+    };
+
+    PerfStats runSequentialInsertBenchmark(size_t operations) {
+        base::Timer timer;
+        timer.start();
+        for (size_t i = 0; i < operations; ++i) {
+            auto value = storeValue(i);
+            tree_.insert(u64_varkey(i), value);
+        }
+        timer.stop();
+        return {operations, timer.elapsed()};
+    }
+
+    PerfStats runLookupBenchmark(size_t lookups, size_t key_space) {
+        std::mt19937_64 rng(42);
+        std::uniform_int_distribution<uint64_t> dist(0, key_space - 1);
+        size_t hits = 0;
+        base::Timer timer;
+        timer.start();
+        for (size_t i = 0; i < lookups; ++i) {
+            uint64_t out = 0;
+            if (searchKey(dist(rng), &out)) {
+                ++hits;
+            }
+        }
+        timer.stop();
+        EXPECT_EQ(hits, lookups) << "Each lookup should hit after warming the tree";
+        return {lookups, timer.elapsed()};
+    }
+};
+
+TEST_F(MasstreePerformanceTest, BulkInsertThroughput) {
+    if (!ShouldRunPerfTests()) {
+        GTEST_SKIP() << "Set MASSTREE_PERF_TESTS=1 to run performance benchmarks.";
+    }
+    constexpr size_t kInsertOps = 10'000;
+    auto stats = runSequentialInsertBenchmark(kInsertOps);
+    EXPECT_EQ(kInsertOps, tree_.size());
+
+    report_qps("Masstree bulk insert", stats.operations, stats.seconds);
+    RecordProperty("MasstreeBulkInsertOps", static_cast<int>(stats.operations));
+    RecordProperty("MasstreeBulkInsertSeconds", stats.seconds);
+    RecordProperty("MasstreeBulkInsertQPS", stats.qps());
+    EXPECT_GT(stats.qps(), 0.0);
+}
+
+TEST_F(MasstreePerformanceTest, LookupThroughputAfterWarmup) {
+    if (!ShouldRunPerfTests()) {
+        GTEST_SKIP() << "Set MASSTREE_PERF_TESTS=1 to run performance benchmarks.";
+    }
+    constexpr size_t kPrefill = 10'000;
+    constexpr size_t kLookupOps = 20'000;
+    auto warmup = runSequentialInsertBenchmark(kPrefill);
+    EXPECT_EQ(kPrefill, tree_.size());
+
+    auto lookup = runLookupBenchmark(kLookupOps, kPrefill);
+
+    report_qps("Masstree lookup", lookup.operations, lookup.seconds);
+    RecordProperty("MasstreeLookupOps", static_cast<int>(lookup.operations));
+    RecordProperty("MasstreeLookupSeconds", lookup.seconds);
+    RecordProperty("MasstreeLookupQPS", lookup.qps());
+    RecordProperty("MasstreeWarmupSeconds", warmup.seconds);
+    EXPECT_GT(lookup.qps(), 0.0);
 }
