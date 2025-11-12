@@ -1,0 +1,75 @@
+{
+  "timestamp": "2025-11-12T16:52:36.993906",
+  "baseline_commit": "f64b4d96194a8bf24da0c593bbe60be24eaf5113",
+  "optimized_commit": "7b66d7e0e577dc7a4c3105c646fa3a11dcc3823e",
+  "comparison": {
+    "insert": {
+      "throughput": {
+        "unrefactored": 2733254.3833333333,
+        "optimized": 2808829.2933333335,
+        "change_percent": 2.7650155968224577
+      },
+      "avg_latency": {
+        "unrefactored": 0.3666666666666667,
+        "optimized": 0.35333333333333333,
+        "change_percent": -3.6363636363636447
+      },
+      "p99_latency": {
+        "unrefactored": 0.7333333333333334,
+        "optimized": 0.7166666666666667,
+        "change_percent": -2.2727272727272796
+      }
+    },
+    "search": {
+      "throughput": {
+        "unrefactored": 8995528.313333334,
+        "optimized": 7910096.8533333335,
+        "change_percent": -12.066344768112783
+      },
+      "avg_latency": {
+        "unrefactored": 0.11333333333333334,
+        "optimized": 0.13333333333333333,
+        "change_percent": 17.647058823529402
+      },
+      "p99_latency": {
+        "unrefactored": 0.23,
+        "optimized": 0.2633333333333333,
+        "change_percent": 14.49275362318839
+      }
+    },
+    "remove": {
+      "throughput": {
+        "unrefactored": 2501286.7866666666,
+        "optimized": 2737546.1133333333,
+        "change_percent": 9.445511323454319
+      },
+      "avg_latency": {
+        "unrefactored": 0.4033333333333333,
+        "optimized": 0.37,
+        "change_percent": -8.264462809917354
+      },
+      "p99_latency": {
+        "unrefactored": 0.8000000000000002,
+        "optimized": 0.74,
+        "change_percent": -7.5000000000000195
+      }
+    },
+    "scan": {
+      "throughput": {
+        "unrefactored": 3547201.473333333,
+        "optimized": 4318427.276666666,
+        "change_percent": 21.74180996290031
+      },
+      "avg_latency": {
+        "unrefactored": 0.28,
+        "optimized": 0.23666666666666666,
+        "change_percent": -15.476190476190485
+      },
+      "p99_latency": {
+        "unrefactored": 0.5666666666666668,
+        "optimized": 0.47333333333333333,
+        "change_percent": -16.470588235294134
+      }
+    }
+  }
+}

@@ -512,8 +512,10 @@ public:
   private:
     bool invoke(scan_view &view) OVERRIDE
     {
-      // Performance optimization: use key_ref() to avoid string copy
-      return invoke(view.key_ref(), view.value());
+      // Note: We use key() instead of key_ref() here because the callback
+      // signature takes const string_type&, and callers may store the reference.
+      // Using key_ref() would create a dangling reference when scan_view is destroyed.
+      return invoke(view.key(), view.value());
     }
   };
 
@@ -865,24 +867,23 @@ inline bool mbtree<P>::insert_if_absent(const key_type &k, value_type v,
 }
 
 template <typename P>
-typename mbtree<P>::mutation_result_t
+inline typename mbtree<P>::mutation_result_t
 mbtree<P>::insert_with_result(const key_type &k, value_type v,
                               insert_info_t *insert_info)
 {
   value_type old{};
   const bool inserted = insert(k, v, &old, insert_info);
-  return mutation_result_t{inserted, old};
+  return {inserted, old};
 }
 
 template <typename P>
-typename mbtree<P>::mutation_result_t
+inline typename mbtree<P>::mutation_result_t
 mbtree<P>::insert_if_absent_with_result(const key_type &k, value_type v,
                                         insert_info_t *insert_info)
 {
   rcu_region guard;
   threadinfo ti;
   Masstree::tcursor<P> lp(table_, k.data(), k.length());
-  mutation_result_t result{};
   bool found = lp.find_insert(ti);
   if (!found) {
     ti.observe_phantoms(lp.node());
@@ -892,16 +893,15 @@ mbtree<P>::insert_if_absent_with_result(const key_type &k, value_type v,
                            lp.previous_full_version_value(),
                            lp.next_full_version_value(1));
     }
-    result.inserted = true;
-    result.previous = value_type{};
+    lp.finish(true, ti);
+    return {true, value_type{}};
   } else {
-    result.inserted = false;
-    result.previous = lp.value();
+    value_type previous = lp.value();
     if (insert_info)
       insert_info->reset();
+    lp.finish(false, ti);
+    return {false, previous};
   }
-  lp.finish(!found, ti);
-  return result;
 }
 
 /**
@@ -924,12 +924,12 @@ inline bool mbtree<P>::remove(const key_type &k, value_type *old_v)
 }
 
 template <typename P>
-typename mbtree<P>::removal_result_t
+inline typename mbtree<P>::removal_result_t
 mbtree<P>::remove_with_result(const key_type &k)
 {
   value_type old{};
   const bool removed = remove(k, &old);
-  return removal_result_t{removed, old};
+  return {removed, old};
 }
 
 template <typename P>
@@ -1010,8 +1010,10 @@ public:
   bool
   invoke(scan_view &view) OVERRIDE
   {
-    // Performance optimization: use key_ref() to avoid string copy
-    return callback_(view.key_ref(), view.value());
+    // Note: We use key() instead of key_ref() here because the callback
+    // signature takes const string_type&, and callers may store the reference.
+    // Using key_ref() would create a dangling reference when scan_view is destroyed.
+    return callback_(view.key(), view.value());
   }
 
  private:

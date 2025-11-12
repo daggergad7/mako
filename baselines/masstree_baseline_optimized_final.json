@@ -1,0 +1,51 @@
+{
+  "timestamp": "2025-11-12T16:52:18.154898",
+  "metadata": {
+    "git_commit": "7b66d7e0e577dc7a4c3105c646fa3a11dcc3823e",
+    "description": "Refactored code with optimizations (inline keywords, aggregate init) (operations: insert, remove, scan, search)",
+    "benchmark_params": {
+      "num_ops": 100000,
+      "num_threads": 4,
+      "key_range": 1000000,
+      "iterations": 3
+    }
+  },
+  "results": {
+    "insert": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 2808829.2933333335,
+      "avg_latency_us": 0.35333333333333333,
+      "min_latency_us": 0.06666666666666667,
+      "max_latency_us": 621.7266666666667,
+      "p50_latency_us": 0.35333333333333333,
+      "p99_latency_us": 0.7166666666666667
+    },
+    "search": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 7910096.8533333335,
+      "avg_latency_us": 0.13333333333333333,
+      "min_latency_us": 0.05,
+      "max_latency_us": 182.12666666666667,
+      "p50_latency_us": 0.13333333333333333,
+      "p99_latency_us": 0.2633333333333333
+    },
+    "remove": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 2737546.1133333333,
+      "avg_latency_us": 0.37,
+      "min_latency_us": 0.06666666666666667,
+      "max_latency_us": 152.77,
+      "p50_latency_us": 0.37,
+      "p99_latency_us": 0.74
+    },
+    "scan": {
+      "operations": 10000.0,
+      "throughput_ops_per_sec": 4318427.276666666,
+      "avg_latency_us": 0.23666666666666666,
+      "min_latency_us": 0.06,
+      "max_latency_us": 40.903333333333336,
+      "p50_latency_us": 0.23666666666666666,
+      "p99_latency_us": 0.47333333333333333
+    }
+  }
+}
