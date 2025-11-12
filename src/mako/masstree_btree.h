@@ -394,6 +394,12 @@ public:
       return string_type(key_storage_.data(), key_storage_.size());
     }
 
+    // Performance optimization: return const reference to avoid string copy
+    const string_type& key_ref() const {
+      INVARIANT(valid_);
+      return key_storage_;
+    }
+
     value_type value() const {
       INVARIANT(valid_);
       return value_;
@@ -506,7 +512,8 @@ public:
   private:
     bool invoke(scan_view &view) OVERRIDE
     {
-      return invoke(view.key(), view.value());
+      // Performance optimization: use key_ref() to avoid string copy
+      return invoke(view.key_ref(), view.value());
     }
   };
 
@@ -1003,7 +1010,8 @@ public:
   bool
   invoke(scan_view &view) OVERRIDE
   {
-    return callback_(view.key(), view.value());
+    // Performance optimization: use key_ref() to avoid string copy
+    return callback_(view.key_ref(), view.value());
   }
 
  private:

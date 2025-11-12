@@ -61,7 +61,10 @@ Masstree is the core storage engine in Mako. This plan tracks our migration to R
 ## Phase 5: Integration & Tooling
 - [x] Migrate legacy `src/mako/btree.cc` helpers to the safe façade (now routed through `insert_with_result` wrappers).
 - [x] Update `kvdb_wrapper_impl.h` to use RAII deleters and document ownership, with GC tests backing the change.
-- [ ] Capture throughput/latency baselines pre/post migration to watch for regressions.
+- [x] Capture throughput/latency baselines pre/post migration to watch for regressions.
+  - Baseline: `baselines/masstree_baseline_mako-dev-updated.json` (pre-migration from mako-dev)
+  - Baseline: `baselines/masstree_baseline_migration.json` (post-migration from masstree-final)
+  - Comparison: `baselines/masstree_comparison_migration.json` (shows search regression ~19% throughput, ~24% latency)
 
 
 ---

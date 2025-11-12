@@ -407,13 +407,13 @@ base_txn_btree<Transaction, P>
   ::invoke(scan_view &view)
 {
   t->ensure_active();
-  VERBOSE(std::cerr << "search range k: " << util::hexify(view.key()) << " from <node=0x" << util::hexify(view.node())
+  VERBOSE(std::cerr << "search range k: " << util::hexify(view.key_ref()) << " from <node=0x" << util::hexify(view.node())
                     << ", version=" << view.version() << ">" << std::endl
                     << "  " << *(view.value().as<dbtuple>()) << std::endl);
   const dbtuple * const tuple = view.value().as<const dbtuple>();
   if (t->do_tuple_read(tuple, *value_reader))
     return caller_callback->invoke(
-        (*key_reader)(view.key()), value_reader->results());
+        (*key_reader)(view.key_ref()), value_reader->results());
   return true;
 }
 
