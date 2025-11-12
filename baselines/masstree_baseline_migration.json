@@ -1,0 +1,51 @@
+{
+  "timestamp": "2025-11-12T15:52:17.129809",
+  "metadata": {
+    "git_commit": "6cf39fdb8075fa4cca29e3c14c829b4aea0cf8b6",
+    "description": "Post-migration baseline (gliston/masstree-final branch) (operations: insert, remove, scan, search)",
+    "benchmark_params": {
+      "num_ops": 100000,
+      "num_threads": 4,
+      "key_range": 1000000,
+      "iterations": 3
+    }
+  },
+  "results": {
+    "insert": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 2759813.946666667,
+      "avg_latency_us": 0.3666666666666667,
+      "min_latency_us": 0.07,
+      "max_latency_us": 703.15,
+      "p50_latency_us": 0.3666666666666667,
+      "p99_latency_us": 0.73
+    },
+    "search": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 7273583.57,
+      "avg_latency_us": 0.14,
+      "min_latency_us": 0.05000000000000001,
+      "max_latency_us": 872.3233333333333,
+      "p50_latency_us": 0.14,
+      "p99_latency_us": 0.2833333333333334
+    },
+    "remove": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 2533642.0766666667,
+      "avg_latency_us": 0.39999999999999997,
+      "min_latency_us": 0.06333333333333334,
+      "max_latency_us": 409.95666666666665,
+      "p50_latency_us": 0.39999999999999997,
+      "p99_latency_us": 0.7999999999999999
+    },
+    "scan": {
+      "operations": 10000.0,
+      "throughput_ops_per_sec": 3534559.08,
+      "avg_latency_us": 0.3033333333333333,
+      "min_latency_us": 0.06,
+      "max_latency_us": 32.97,
+      "p50_latency_us": 0.3033333333333333,
+      "p99_latency_us": 0.6066666666666666
+    }
+  }
+}

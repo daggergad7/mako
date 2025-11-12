@@ -1,0 +1,52 @@
+{
+  "timestamp": "2025-11-12T15:34:28.537913",
+  "metadata": {
+    "git_commit": "f64b4d96194a8bf24da0c593bbe60be24eaf5113",
+    "description": "Updated pre-migration baseline from mako-dev branch (operations: insert, remove, scan, search)",
+    "benchmark_params": {
+      "num_ops": 100000,
+      "num_threads": 4,
+      "key_range": 1000000,
+      "iterations": 3
+    }
+  },
+  "results": {
+    "insert": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 2733254.3833333333,
+      "avg_latency_us": 0.3666666666666667,
+      "min_latency_us": 0.07,
+      "max_latency_us": 1074.4866666666667,
+      "p50_latency_us": 0.3666666666666667,
+      "p99_latency_us": 0.7333333333333334
+    },
+    "search": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 8995528.313333334,
+      "avg_latency_us": 0.11333333333333334,
+      "min_latency_us": 0.05000000000000001,
+      "max_latency_us": 127.29333333333334,
+      "p50_latency_us": 0.11333333333333334,
+      "p99_latency_us": 0.23
+    },
+    "remove": {
+      "operations": 100000.0,
+      "throughput_ops_per_sec": 2501286.7866666666,
+      "avg_latency_us": 0.4033333333333333,
+      "min_latency_us": 0.06,
+      "max_latency_us": 175.85999999999999,
+      "p50_latency_us": 0.4033333333333333,
+      "p99_latency_us": 0.8000000000000002
+    },
+    "scan": {
+      "operations": 10000.0,
+      "throughput_ops_per_sec": 3547201.473333333,
+      "avg_latency_us": 0.28,
+      "min_latency_us": 0.06,
+      "max_latency_us": 80.62333333333333,
+      "p50_latency_us": 0.28,
+      "p99_latency_us": 0.5666666666666668
+    }
+  }
+}
+
